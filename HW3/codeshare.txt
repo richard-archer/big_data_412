@@ -1,0 +1,134 @@
+# CROSS VALIDATION
+
+
+
+
+#Standardize=FALSE because we do not want them standardized since the variable in this case is product category, indicating category membership (either 0 or 1). 
+Therefore, standardisation puts more penalty on more common categories and less penalty on more rare categories (since sd(xi) will be lower)
+
+#Richard's Q1 
+Because the LASSO algorithm is not scale invariant, we don't want the absolute size of coefficients (i.e. the scale of coefficients) to determine what gets dropped
+As a result, we typically standardize variables. HOWEVER, here, all our variables are 1 or 0, so we don't gain information from scaling them. Scaling actually reduces information
+since it distorts variables in a non-meaningful way in this case
+
+## ANSWER FOR Q2 DISCOUNT
+The coefficient on discount is 6.961539, so exp(6.961539) = 1055.256, which means the odds of having a 5 star review are 1055.256 higher if the word discount is in the review.
+
+
+# Jay's drop
+lasso2_beta<-coef(lasso2)
+lasso2_beta<-lasso2_beta[-1,]
+lasso2_beta[order(lasso2_beta,decreasing=TRUE)[1:10]]
+lasso2_beta_name=names(lasso2_beta)
+
+# Andy's sort, prints numbers but not names
+  sort(coef(lasso2), decreasing=TRUE)[1:10]
+  
+  
+# JAY's ANSWERS THAT HE INVENTED HIMSELF WITH HIS CS BACKGROUND, ANALYTICAL SKILLS, AND INTELECT (copied from piazza)
+lasso2_beta<-coef(lasso2)
+lasso2_beta<-lasso2_beta[-1,]
+lasso2_beta[order(lasso2_beta,decreasing=TRUE)[1:10]]
+
+# ANdY'S TIME TO SHINE
+lambda_name<-colnames(coef(lasso2))
+sum(coef(lasso2)!=0)
+
+
+# FIND DISCOUNT
+lasso2_beta['discount']
+#The interpretation of discount is that reviews with the word 'discount' are indicative of a 5-star review. 
+
+## CROSS VALIDATION CODE
+# CROSS-VALIDATION
+
+#Andys, gives 953
+sum(coef(cv.fit, select="min")!=0)
+#Andy's, other answer, gives 1
+cv_min<-coef(cv.fit, select="min")
+sum(cv_min=!0)
+
+
+coef(cv.fit) ## 1se rule; see ?cv.gamlr
+
+coef(cv.fit, select="min") ## min cv selection
+
+## plot them together
+
+par(mfrow=c(1,2))
+
+plot(cv.fit)
+
+plot(cv.fit$gamlr) ## cv.gamlr includes a gamlr object
+
+
+###number 1, Andy
+
+```{r data, results='asis'}
+
+
+# Let's define the binary outcome
+
+# Y=1 if the rating was 5 stars
+
+# Y=0 otherwise
+
+Y<-as.numeric(data$Score==5)
+
+# (a) Use only product category as a predictor
+
+library(gamlr)
+
+source("naref.R") 
+
+#class(data$Prod_Category)
+
+
+# Since product category is a factor, we want to relevel it for the LASSO. 
+# We want each coefficient to be an intercept for each factor level rather than a contrast. 
+# Check the extra slides at the end of the lecture.
+# look inside naref.R. This function relevels the factors for us.
+
+data$Prod_Category<-naref(data$Prod_Category)
+
+# Create a design matrix using only products
+
+products<-data.frame(data$Prod_Category)
+
+x_cat<-sparse.model.matrix(~., data=products)[,-1]
+
+# Sparse matrix, storing 0's as .'s 
+# Remember that we removed intercept so that each category 
+# is standalone, not a contrast relative to the baseline category
+
+colnames(x_cat)<-levels(data$Prod_Category)[-1]
+
+# let's call the columns of the sparse design matrix as the product categories
+
+# Let's fit the LASSO with just the product categories
+
+lasso1<- gamlr(x_cat, 	y=Y, standardize=FALSE,family="binomial",
+lambda.min.ratio=1e-3)
+
+#summary(lasso1)
+lambda_name<-colnames(coef(lasso1))
+
+#This is the in sample r2 at the lambda we found
+rsq<-summary(lasso1)[lambda_name,"r2"]
+rsq
+
+#log(lasso1$lambda[which.min(AICc(lasso1))])]
+
+
+
+CROSS VALIDATION: 
+cv.fit <- cv.gamlr(x_cat2,
+				   y=Y,
+				   lambda.min.ratio=1e-3,
+				   family="binomial",
+				   verb=TRUE)
+
+sum(coef(cv.fit, select="min")!=0)
+
+sum(coef(cv.fit, select="1se")!=0)
+
