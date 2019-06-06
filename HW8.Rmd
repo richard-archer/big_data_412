@@ -34,6 +34,9 @@ library(randomForest)
 library(class)
 library(plyr)
 library(bnstruct)
+library(gdata)
+library(readxl)
+library(janitor)
 ```
 
 
@@ -306,7 +309,70 @@ CF_turnout3[, percent_cols]<- apply(CF_turnout3[, percent_cols],2, function(x){
  as.numeric(sub("%", "", x, fixed=TRUE))/100})
 CF_turnout3
 ```
+```{r}
+#election results by state
+results<-read_excel("./Data/G-politicians.xls")
+results<-clean_names(results)
 
+#change abb col for matching purposes
+colnames(results)[colnames(results)=="state_abbreviation"]<-"Abbreviation"
+
+#fix some weird data so its all D/R
+results$balloted_party_ies[(results$balloted_party_ies=="Republican, American Independent")|(results$balloted_party_ies=="Conservative, Republican")]<-"Republican"
+results$balloted_party_ies[(results$balloted_party_ies=="Democratic-Nonpartisan League")|(results$balloted_party_ies=="Democratic-Farmer Labor")|(results$balloted_party_ies=="Working Families, Women's Equality, Democratic")]<-"Democratic"
+
+#only take presidential candidates who are D/R
+results<-subset(results, (office_abbreviation=="P")&( (balloted_party_ies=="Republican")|(balloted_party_ies=="Democratic")))
+```
+
+```{r}
+#df with state and margin 
+pop_vote<-data.frame(Abbreviation=state_converter1$Abbreviation, margin=NaN)
+
+#for each state, get the votes for each party, subtract them to get difference, add it to the df pop_vote
+for (state in state_converter1$Abbreviation){
+  dem<-subset(results, (Abbreviation==state)&(balloted_party_ies=="Democratic"), select=popular_vote)
+  rep<-subset(results, (Abbreviation==state)&(balloted_party_ies=="Republican"), select=popular_vote)
+  m<-dem$popular_vote-rep$popular_vote
+  print(state)
+  pop_vote$margin[pop_vote$Abbreviation==state]<-m
+}
+
+#add who won the popular vote
+pop_vote$Winner[pop_vote$margin>0]<-"D"
+pop_vote$Winner[pop_vote$margin<0]<-"R"
+
+head(pop_vote)
+```
+
+```{r}
+#merge vote margin and winner with turnout/CF df
+
+#ISSUE: converting the total votes column (read in as a factor) into a numeric so we can get a percentage (to account for difference in voting populations of each state)
+
+as.numeric.factor <- function(x) {as.numeric(levels(x))[x]}
+
+asNumeric <- function(x) as.numeric(as.character(x))
+factorsNumeric <- function(d) modifyList(d, lapply(d[, sapply(d, is.factor)],   
+                                                   asNumeric))
+
+
+
+CF_to_pop<-merge(CF_turnout3, pop_vote, by="Abbreviation")
+
+CF_to_pop2<-factorsNumeric(CF_to_pop)
+#CF_to_pop2
+f<-CF_to_pop$Highest.Office
+as.numeric(levels(f))[as.integer(f)]
+#CF_to_pop$Highest.Office<-as.numeric(levels(f))[f]
+#CF_to_pop
+#as.numeric.factor(CF_to_pop$Highest.Office)
+CF_to_pop$margin_dec<-as.numeric(CF_to_pop$margin)/(CF_to_pop$Highest.Office)
+#head(CF_to_pop)
+```
+
+
+```
 ```{r}
 #decision tree with finances
 tree_ex<-tree(as.numeric(VEP.Highest.Office)~Dem.CF+Rep.CF+Ind.CF, data=CF_turnout3)
