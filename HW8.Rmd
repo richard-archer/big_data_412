@@ -51,7 +51,7 @@ ts<-read_dta("./Data/ANES/anes_timeseries_2016.dta")
 #read in the turnout data
 upto2k14<-read.csv("./Data/1980-2014 November General Election - Turnout Rates.csv", skip=1, header=T)
 to2k16<-read.csv("./Data/2016 November General Election - Turnout Rates.csv", skip=1, header=T)
-to2k18<-read.csv("./Data/2016 November General Election - Turnout Rates.csv", skip=1, header=T)
+to2k18<-read.csv("./Data/2018 November General Election - Turnout Rates.csv", skip=1, header=T)
 
 #read in state as x for some reason
 colnames(upto2k14)[colnames(upto2k14)=="X"]<-"State"
@@ -126,6 +126,10 @@ col_df
 
 turnout2<-select(turnout2, colnames(to2k16))
 #all turnout df
+
+colnames(turnout2)
+colnames(to2k16)
+colnames(to2k18)
 turnout<-rbind(turnout2, to2k16, to2k18)
 
 #add regions to turnout data
@@ -313,6 +317,8 @@ CF_turnout3
 #election results by state
 results<-read_excel("./Data/G-politicians.xls")
 results<-clean_names(results)
+
+dim(results)
 
 #change abb col for matching purposes
 colnames(results)[colnames(results)=="state_abbreviation"]<-"Abbreviation"
