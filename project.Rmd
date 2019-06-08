@@ -160,7 +160,7 @@ turnout_reg<-merge(turnout, reg_converter, by="Abbreviation")
 We drop five cases between turnout and turnout_reg--what are these? They're not DC or US.
 
 
-#Campaign Finance!
+#Campaign Finance
 ```{r}
 #campaign finance stuff
 cf15_16<-read.csv("Contributions_15-16.csv")
@@ -277,6 +277,7 @@ cf_lasso <- cf_lasso %>% mutate(cf = D + I + R)
 #alright at this point, cf_lasso has party spending, total spending, and who won
 
 ts3 <- merge(ts2, cf_lasso, by = "Abbreviation")
+ts3
 ```
 
 ```{r}
@@ -300,9 +301,10 @@ coef(double_lasso)["d",]
 
 
 
-#KNN Analysis 
+#Possibly use this to run a simple lasso if we're really fucked for time
 
 This chunk below basically determines the difference between intending to vote and actually turning out to vote. That's kind of interesting--we should see if we can use that voter turnout margin to predict the party that wins in that region. (Liberals are cocky fucks interpretation). Add as an extra layer, post overall KNN or double LASSo
+
 ```{r}
 #V161011 <- registered to vote
 #V161010e <- state abr
@@ -316,6 +318,9 @@ subset(turnout_reg, Year==2016) #turnout in 2016
 #compare by state to get margin, then use to predict party outcome
 ```
 
+
+
+#KNN Analysis 
 
 knn.impute took over ten minutes before I just killed it--what is happening??
 Remember to explain the reason we're treating NA -1 to -7 vs. the other NA values. 
