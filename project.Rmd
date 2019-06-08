@@ -163,8 +163,7 @@ reg_converter<-rbind(NE, NC, South, West)
 turnout_reg<-merge(turnout, reg_converter, by="Abbreviation")
 ```
 
-Did a spot-check of the data for state abbrev. and columns at this point, and it all seems correct! Hurrah!
-However, we drop five cases between turnout and turnout_reg--what are these? They're not DC or US.
+We drop five cases between turnout and turnout_reg--what are these? They're not DC or US.
 
 
 
@@ -268,14 +267,16 @@ ind <- data.frame(cands=c("MCMULLIN FOR PRESIDENT COMMITTEE INC.",
 cf15_16$party[cf15_16$committee_name %in% dems$cands]<-"D"
 cf15_16$party[cf15_16$committee_name %in% reps$cands]<-"R"
 cf15_16$party[cf15_16$committee_name %in% ind$cands]<-"I"
+
 #remove NaN from parties (ie remove not important candidates)
 cf15_16<-completeFun(cf15_16, "party")
+
 #aggregate based on party and state
 com_agg2<-aggregate(disbursement_amount~party+recipient_state, cf15_16, sum)
+
 #change state colname for matching purposes
 colnames(com_agg2)[colnames(com_agg2)=="recipient_state"]<-"Abbreviation"
 ```
-
 
 
 ```{r}
@@ -301,7 +302,34 @@ Ok so a question here: why does our com_agg3 (from com_agg) have abbreviations t
 
 
 #PCA Analysis
-Refer to Riya's working version on Git
+```{r}
+rel<-aggregate(ts[,!(names(ts) %in% c("V161010e", "version"))], by=list(Rel=ts$V161241), mean)
+rel$V162084
+
+#rel
+#pca<-prcomp(rel, scale=T)
+#pca
+na_count <-sapply(ts, function(y) sum(length(which(is.na(y)))))
+
+#na_count["V161010e"]/nrow(ts)
+na_count[na_count>0.00001]
+
+rel_na<-sapply(rel, function(y) sum(length(which(is.na(y)))))
+
+bad_names<-names(rel_na)[rel_na>0]
+
+new_rel<-aggregate(ts[,!(names(ts) %in% c(bad_names, "V161010e", "version"))], by=list(Rel=ts$V161241), mean)
+
+#so what I did here was dropped all columns that had the same value for each row. this is what made the pca work - riya
+new_rel <- new_rel[, sapply(new_rel, function(col) length(unique(col))) > 1] 
+new_rel
+
+pca<-prcomp(new_rel, scale=T)
+pca
+
+
+```
+
 
 #Random Forest
 ```{r}
@@ -355,6 +383,5 @@ par(mfrow=c(1,2))
 plot.new()
 tree_ex<-tree(margin~vote_per+D+R+I, data=CF_pop, mincut =1)
 plot(tree_ex)
-
-#text(tree_ex, splits = TRUE)
+text(tree_ex, splits = TRUE)
 ```
