@@ -1,0 +1,387 @@
+---
+title: "Final Project"
+output: html_document
+---
+
+```{r setup}
+knitr::opts_chunk$set(echo = TRUE, 
+                      #include = TRUE, 
+                      fig.width = 6, fig.height = 4,
+                      results='hide',
+                      warning = FALSE,
+                      cache = TRUE,
+                      digits = 3,
+                      width = 48) 
+```
+```{r}
+library(dplyr)
+library(igraph)
+library(arules)
+library(textir)
+library(maptpx)
+library(wordcloud)
+library(gamlr)
+library(foreign)
+library(haven)
+library(tidyverse)
+library(class)
+library(plyr)
+library(readxl)
+library(openintro)
+```
+
+
+```{r}
+#read in survey data
+ts<-read_dta("anes_timeseries_2016.dta")
+```
+```{r setup, include=FALSE}
+setwd("E:/3rd/Spring/Big Data/project")
+knitr::opts_chunk$set(echo = TRUE, 
+                      #include = TRUE, 
+                      fig.width = 6, fig.height = 4,
+                      results='hide',
+                      warning = FALSE,
+                      cache = TRUE,
+                      digits = 3,
+                      width = 48) 
+
+```
+
+
+```{r}
+#read in survey data
+ts <- read_dta("anes_timeseries_2016.zip")
+#read in the turnout data
+upto2k14<-read.csv("1980-2014 November General Election - Turnout Rates.csv", skip=1, header=T)
+to2k16<-read.csv("2016 November General Election - Turnout Rates.csv", skip=1, header=T)
+to2k18<-read.csv("2018 November General Election - Turnout Rates.csv", skip=1, header=T)
+#columns to be filtered out
+bad_2k14<-c("ICPSR.State.Code", "Alphanumeric.State.Code")
+bad_other<-c("State.Results.Website", "Status")
+```
+
+
+```{r}
+#Combine all the turnout info and add regions
+#upto2k14 column names
+upto2k14<-upto2k14[,!(names(upto2k14)%in% bad_2k14)]
+colnames(upto2k14) <- c("Year", 
+                        "State",
+                        "VEP.Total.Ballots.Counted",
+                        "VEP.Highest.Office",
+                        "VAP.Highest.Office",
+                        "Total.Ballots.Counted",
+                        "Highest.Office",
+                        "VEP",
+                        "VAP",
+                        "non-citizen",
+                        "Prison",
+                        "Probation",
+                        "Parole",
+                        "TIFelon",
+                        "Overseas")
+upto2k14 <-
+  upto2k14 %>% 
+  filter(State != "United States") %>%
+  mutate(Abbreviation = if_else(State == "District of Columbia", 
+                                           "DC", state2abbr(State)))
+#to2k16 column names
+to2k16<-to2k16[,!(names(to2k16)%in% bad_other)]
+to2k16$Year<-2016
+colnames(to2k16) <- c("State",
+                      "VEP.Total.Ballots.Counted",
+                      "VEP.Highest.Office",
+                      "VAP.Highest.Office",
+                      "Total.Ballots.Counted",
+                       "Highest.Office",
+                      "VEP",
+                        "VAP",
+                        "non-citizen",
+                        "Prison",
+                       "Probation",
+                       "Parole",
+                      "TIFelon",
+                      "Overseas",
+                      "Abbreviation",
+                      "Year")
+#to2k18 column names
+to2k18<-to2k18[,!(names(to2k18)%in% bad_other)]
+to2k18$Year<-2018
+colnames(to2k18) <- c("State",
+                      "VEP.Total.Ballots.Counted",
+                      "VEP.Highest.Office",
+                      "Source",
+                      "Total.Ballots.Counted",
+                       "Highest.Office",
+                        "VEP",
+                        "VAP",
+                        "non-citizen",
+                        "Prison",
+                       "Probation",
+                       "Parole",
+                        "TIFelon",
+                      "Overseas",
+                      "Abbreviation",
+                      "Year")
+turnout <- 
+  rbind.fill(upto2k14, to2k16, to2k18) %>%
+  filter(State != "United States") %>%
+  select(-c("Source"))
+#regions
+#dataframes of regions from aes data, done manually
+NE<-data.frame(Abbreviation=c("CT", "ME", "MA", "NH", "NJ", "NY", "PA", "RI", "VT"))
+NC<-data.frame(Abbreviation=c("IL", "IN", "IA", "KS", "MI", "MN", "MO", "NE", "ND"
+, "OH", "SD", "WI"))
+South<-data.frame(Abbreviation=c("AL", "AR", "DE", "DC", "FL", "GA", "KY", "LA", "MD", "MS", "NC", "OK", "SC","TN", "TX", "VA", "WV"))
+West<-data.frame(Abbreviation=c("AK", "AZ", "CA", "CO", "HI", "ID", "MT", "NV", "NM", "OR", "UT", "WA", "WY"))
+#name the regions
+NE$Region<-"NE"
+NC$Region<-"NC"
+South$Region<-"South"
+West$Region<-"West"
+#combine the regions with region labels
+reg_converter<-rbind(NE, NC, South, West)
+#add regions to turnout data
+turnout_reg<-merge(turnout, reg_converter, by="Abbreviation")
+turnout_reg
+```
+
+Did a spot-check of the data for state abbrev. and columns at this point, and it all seems correct! Hurrah!
+However, we drop five cases between turnout and turnout_reg--what are these? They're not DC or US.
+
+
+#Preliminary KNN Analysis 
+
+This chunk below basically determines the difference between intending to vote and actually turning out to vote. 
+```{r}
+#V161011 <- registered to vote
+#V161010e <- state abr
+#V161019 <- registered party
+#V161030 <- intend to vote
+#V161031 <- candidate intended
+#V161241 <- is religion important
+subset(ts, V161030 & V161010e=="CA") #intending to vote in 2016 from CA
+subset(turnout_reg, (Abbreviation=="CA") & (Year==2016)) #turnout for CA 2016
+#dim(subset(ts, V161010e=="CA"))
+```
+knn.impute took over ten minutes before I just killed it--what is happening??
+Remember to explain the reason we're treating NA -1 to -7 vs. the other NA values. 
+```{r}
+#-7 to -1 correspond to NaN, will use these as references
+#-8, -9, 998, 999 will be imputed with KNN
+ts[ts>100]<-NaN
+ts[(ts<0)&(ts>-8)]<-NaN
+na_count1 <-sapply(ts, function(y) sum(length(which(is.na(y))))) #this fucker right here
+na_count1/nrow(ts)
+knn.impute(as.matrix(ts[na_count1/nrow(ts)<0.5]), k=5)
+na_count2 <-sapply(ts, function(y) sum(length(which(is.na(y)))))
+na_count2/nrow(ts)
+#tr<-ts[(ts>0)&(ts<100)]
+#te<-ts[(ts==-8)|(ts==-9)|(ts==998)|(ts==999)]
+#ts[is.na(ts)]<-knn.cv(train=tr, test=te, cl=)
+```
+
+
+
+
+#Campaign Finance!
+```{r}
+#campaign finance stuff
+cf15_16<-read.csv("Contributions_15-16.csv")
+cf_cols<- c("committee_name", 
+            "report_year", 
+            "entity_type", 
+            "recipient_name", 
+            "recipient_state", 
+            "disbursement_description", 
+            "disbursement_date", 
+            "disbursement_amount", 
+            "fec_election_type_desc", 
+            "fec_election_year")
+cf15_16 <- cf15_16[, cf_cols]
+unique(cf15_16$committee_name)
+p<-c("OBAMA FOR AMERICA"=="D") #yo Andy what does this do?
+#cf15_16$party<-apply(cf15_16$committee_name, 2, function(x) {x <- revalue(x, p); x})
+com_agg <-aggregate(cf15_16$disbursement_amount, 
+                    by=list(Comittee=cf15_16$committee_name), 
+                    sum)
+colnames(com_agg)[colnames(com_agg)=="x"]<-"Spending"
+cut_df<-as.data.frame(com_agg)[com_agg$Spending>1000000,]
+#this allows us to see who is "important" based of these numbers. we chose 1 million as the threshold but would be interesting to use this number as level to see whether answers change
+```
+
+```{r}
+#use this to figure out which candidates are most importatnt
+cut_df$Comittee
+#removes rows with NaN in specific column
+completeFun <- function(data, desiredCols) {
+  completeVec <- complete.cases(data[, desiredCols])
+  return(data[completeVec, ])
+}
+#important candidate comittees, based on party
+#Can we do cut_df$Committee?
+dems <- data.frame(cands=c("OBAMA FOR AMERICA", 
+                           "HILLARY FOR AMERICA", 
+                           "BERNIE 2016", 
+                           "COMMITTEE TO ELECT LLOYD KELSO PRESIDENT", 
+                           "ROCKY 2016 LLC", 
+                           "O'MALLEY FOR PRESIDENT", 
+                           "WILLIE WILSON 2016"))
+reps <- data.frame(cands=c("CRUZ FOR PRESIDENT", 
+                           "CARLY FOR PRESIDENT", 
+                           "CARSON AMERICA", 
+                           "DONALD J. TRUMP FOR PRESIDENT, INC.", 
+                           "JEB 2016, INC.", 
+                           "MARCO RUBIO FOR PRESIDENT", 
+                           "CHRIS CHRISTIE FOR PRESIDENT INC", 
+                           "PERRY FOR PRESIDENT INC", 
+                           "SANTORUM FOR PRESIDENT 2016", 
+                           "LINDSEY GRAHAM 2016", 
+                           "RAND PAUL FOR PRESIDENT, INC.", 
+                           "HUCKABEE FOR PRESIDENT, INC.", 
+                           "SCOTT WALKER INC", 
+                           "KASICH FOR AMERICA INC", 
+                           "FRIENDS OF HERMAN CAIN INC"))
+ind <- data.frame(cands=c("MCMULLIN FOR PRESIDENT COMMITTEE INC.", 
+                          "GARY JOHNSON 2016", 
+                          "JILL STEIN FOR PRESIDENT"))
+#assign party labels 
+cf15_16$party[cf15_16$committee_name %in% dems$cands]<-"D"
+cf15_16$party[cf15_16$committee_name %in% reps$cands]<-"R"
+cf15_16$party[cf15_16$committee_name %in% ind$cands]<-"I"
+#remove NaN from parties (ie remove not important candidates)
+cf15_16<-completeFun(cf15_16, "party")
+#aggregate based on party and state
+com_agg2<-aggregate(disbursement_amount~party+recipient_state, cf15_16, sum)
+#change state colname for matching purposes
+colnames(com_agg2)[colnames(com_agg2)=="recipient_state"]<-"Abbreviation"
+```
+
+```{r}
+#just 2016 turnout info
+turnout_16<-subset(turnout_reg, Year==2016)
+#disbursements by state
+dem_CF<-subset(com_agg2, party=="D", select=c("disbursement_amount", "Abbreviation"))
+rep_CF<-subset(com_agg2, party=="R", select=c("disbursement_amount", "Abbreviation"))
+ind_CF<-subset(com_agg2, party=="I", select=c("disbursement_amount", "Abbreviation"))
+#abbreviations = we have 70 rows but only 51 states... so what are the other 19
+```
+
+```{r}
+#Add CF to turnout df by merging each parties spending by state 
+#Method 2
+com_agg3 <-
+  com_agg2 %>%
+  spread(party, disbursement_amount)
+turnout_cf <- 
+  merge(turnout_16, com_agg3, by="Abbreviation")
+```
+Ok so a question here: why does our com_agg3 (from com_agg) have abbreviations that aren't real? ZZ is not a state, and I suck at geography but we don't have 75 states. 
+
+```{r}
+#Method 1:  
+CF_turnout1<-merge(turnout_16, dem_CF, by="Abbreviation")
+colnames(CF_turnout1)[colnames(CF_turnout1)=="disbursement_amount"]<-"Dem.CF"
+CF_turnout2<-merge(CF_turnout1, rep_CF, by="Abbreviation")
+colnames(CF_turnout2)[colnames(CF_turnout2)=="disbursement_amount"]<-"Rep.CF"
+CF_turnout3<-merge(CF_turnout2, ind_CF, by="Abbreviation")
+colnames(CF_turnout3)[colnames(CF_turnout3)=="disbursement_amount"]<-"Ind.CF"
+CF_turnout3
+```
+
+
+#PCA Analysis?
+
+holy shit what's happening what are these errors
+```{r}
+rel<-aggregate(ts[,!(names(ts) %in% c("V161010e", "version"))], by=list(Rel=ts$V161241), mean)
+rel$V162084
+#rel
+#pca<-prcomp(rel, scale=T)
+#pca
+na_count <-sapply(ts, function(y) sum(length(which(is.na(y)))))
+#na_count["V161010e"]/nrow(ts)
+na_count[na_count>0.00001]
+rel_na<-sapply(rel, function(y) sum(length(which(is.na(y)))))
+bad_names<-names(rel_na)[rel_na>0]
+new_rel<-aggregate(ts[,!(names(ts) %in% c(bad_names, "V161010e", "version"))], by=list(Rel=ts$V161241), mean)
+#so what I did here was dropped all columns that had the same value for each row. this is what made the pca work - riya
+new_rel <- new_rel[, sapply(new_rel, function(col) length(unique(col))) > 1] 
+new_rel
+pca<-prcomp(new_rel, scale=T)
+pca
+```
+
+
+```{r}
+#ONLY RUN THIS ONCE OR THE PERCENTS JUST GET SMALLER AND SMALLER,
+#or change the code somehow
+#columns that have percents in them
+percent_cols<-c("VEP.Total.Ballots.Counted", "VEP.Highest.Office", "VAP.Highest.Office", "X..Non.citizen")
+#change these columns into decimals
+turnout_cf[, percent_cols]<- 
+  apply(turnout_cf[, percent_cols], 2, 
+        function(x){as.numeric(sub("%", "", x, fixed=TRUE))/100})
+```
+
+
+```{r}
+#election results by state
+results<-read_excel("G-politicians.xls")
+clean_names(results)
+colnames(results)[colnames(results)=="state_abbreviation"]<-"Abbreviation"
+#fix some weird names so its all D/R
+results$`Balloted party`[(results$`Balloted party`=="Republican, American Independent")|(results$`Balloted party`=="Conservative, Republican")]<-"Republican"
+results$`Balloted party`[(results$`Balloted party`=="Democratic-Nonpartisan League")|(results$`Balloted party`=="Democratic-Farmer Labor")|(results$`Balloted party`=="Working Families, Women's Equality, Democratic")]<-"Democratic"
+#only take presidential candidates who are D/R
+results<-subset(results,(`Office abbreviation`=="P")&((`Balloted party`=="Republican")|(`Balloted party`=="Democratic")))
+```
+
+What does it mean that our margin is Nan 
+```{r}
+#df with state and margin 
+state_converter1<-read.csv("State_converter.txt")
+pop_vote<-data.frame(Abbreviation=state_converter1$Abbreviation, margin=NaN)
+#for each state, get the votes for each party, subtract them to get difference, add it to the df pop_vote
+for (state in state_converter$Abbreviation){
+  dem<-subset(results, (Abbreviation==state)&(`Balloted party`=="Democratic"), select=popular_vote)
+  rep<-subset(results, (Abbreviation==state)&(`Balloted party`=="Republican"), select=popular_vote)
+  m<-dem$popular_vote-rep$popular_vote
+  print(state)
+  pop_vote$margin[pop_vote$Abbreviation==state]<-m
+}
+#add who won the popular vote
+pop_vote$Winner[pop_vote$margin>0]<-"D"
+pop_vote$Winner[pop_vote$margin<0]<-"R"
+head(pop_vote)
+```
+
+
+AHHHH SO MANY NASSSS WHAT IS HAPPENING SO MUCH COERCION
+```{r}
+#merge vote margin and winner with turnout/CF df
+#ISSUE: converting the total votes column (read in as a factor) into a numeric so we can get a percentage (to account for difference in voting populations of each state)
+as.numeric.factor <- function(x) {as.numeric(levels(x))[x]}
+asNumeric <- function(x) as.numeric(as.character(x))
+factorsNumeric <- function(d) modifyList(d, lapply(d[, sapply(d, is.factor)],   
+                                                   asNumeric))
+CF_to_pop<-merge(turnout_cf, pop_vote, by="Abbreviation")
+CF_to_pop2<-factorsNumeric(CF_to_pop)
+#CF_to_pop2
+f<-CF_to_pop$Highest.Office
+as.numeric(levels(f))[as.integer(f)]
+#CF_to_pop$Highest.Office<-as.numeric(levels(f))[f]
+#CF_to_pop
+#as.numeric.factor(CF_to_pop$Highest.Office)
+CF_to_pop$margin_dec<-as.numeric(CF_to_pop$margin)/(CF_to_pop$Highest.Office)
+#head(CF_to_pop)
+```
+
+
+```{r}
+#decision tree with finances
+tree_ex<-tree(as.numeric(VEP.Highest.Office)~Dem.CF+Rep.CF+Ind.CF, data=turnout_cf)
+plot(tree_ex)
+text(tree_ex)
+```
