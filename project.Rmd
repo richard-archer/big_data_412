@@ -46,12 +46,6 @@ library(randomForest)
 library(plyr)
 library(arules)
 library(textir)
-# library(maptpx)
-# library(foreign)
-# library(class)
-# library(bnstruct)
-# library(gdata)
-# library(janitor)
 ```
 
 
@@ -166,41 +160,6 @@ turnout_reg<-merge(turnout, reg_converter, by="Abbreviation")
 We drop five cases between turnout and turnout_reg--what are these? They're not DC or US.
 
 
-
-#Preliminary KNN Analysis 
-
-This chunk below basically determines the difference between intending to vote and actually turning out to vote. That's kind of interesting--we should see if we can use that voter turnout margin to predict the party that wins in that region. (Liberals are cocky fucks interpretation). Add as an extra layer, post overall KNN or double LASSo
-```{r}
-#V161011 <- registered to vote
-#V161010e <- state abr
-#V161019 <- registered party
-#V161030 <- intend to vote
-#V161031 <- candidate intended
-#V161241 <- is religion important
-
-subset(ts, V161030) #intending to vote in 2016
-subset(turnout_reg, Year==2016) #turnout in 2016 
-#compare by state to get margin, then use to predict party outcome
-```
-
-
-knn.impute took over ten minutes before I just killed it--what is happening??
-Remember to explain the reason we're treating NA -1 to -7 vs. the other NA values. 
-```{r}
-#-7 to -1 correspond to NaN, will use these as references
-#-8, -9, 998, 999 will be imputed with KNN
-ts[ts>100]<-NaN
-ts[(ts<0)&(ts>-8)]<-NaN
-na_count1 <-sapply(ts, function(y) sum(length(which(is.na(y))))) #this fucker right here
-na_count1/nrow(ts)
-knn.impute(as.matrix(ts[na_count1/nrow(ts)<0.5]), k=5) #kNNImpute in imputation ?
-na_count2 <-sapply(ts, function(y) sum(length(which(is.na(y)))))
-na_count2/nrow(ts)
-
-```
-
-
-
 #Campaign Finance!
 ```{r}
 #campaign finance stuff
@@ -227,7 +186,7 @@ cut_df<-as.data.frame(com_agg)[com_agg$Spending>1000000,]
 ```
 
 ```{r}
-#use this to figure out which candidates are most importatnt
+#figure out which candidates are most importatnt
 cut_df$Comittee
 
 #removes rows with NaN in specific column
@@ -286,7 +245,6 @@ turnout_16<-subset(turnout_reg, Year==2016)
 dem_CF<-subset(com_agg2, party=="D", select=c("disbursement_amount", "Abbreviation"))
 rep_CF<-subset(com_agg2, party=="R", select=c("disbursement_amount", "Abbreviation"))
 ind_CF<-subset(com_agg2, party=="I", select=c("disbursement_amount", "Abbreviation"))
-
 ```
 
 ```{r}
@@ -297,8 +255,84 @@ com_agg3 <-
   spread(party, disbursement_amount)
 turnout_cf <- 
   merge(turnout_16, com_agg3, by="Abbreviation")
+
 ```
 Ok so a question here: why does our com_agg3 (from com_agg) have abbreviations that aren't real? ZZ is not a state, and I suck at geography but we don't have 75 states. OMG ZZ IS THE *DEEP* STATE??!!
+
+
+
+#Double-LASSO
+
+```{r}
+ts1 <- mutate(ts, Abbreviation = V161010e)
+ts2<- merge(ts1, reg_converter, by="Abbreviation")
+
+#at this point, we take our ts dataframe, and we add campaign finance by state
+#Campaign finance is from com_agg3, and we sum the total amount spent in that state
+State_converter <- read.csv("State_converter.txt")
+com_agg3 <- filter(com_agg3, Abbreviation %in% State_converter$Abbreviation)
+cf_lasso <- merge(com_agg3, resultsm, by = "Abbreviation")
+cf_lasso[is.na(cf_lasso)] <- 0
+cf_lasso <- cf_lasso %>% mutate(cf = D + I + R)
+#alright at this point, cf_lasso has party spending, total spending, and who won
+
+ts3 <- merge(ts2, cf_lasso, by = "Abbreviation")
+```
+
+```{r}
+#LASSO TIME BITCHES
+#d = campaign finance, dhat = , V = margin or party_win
+#bc we want to see whether campaign finance is helpful in predicting outcome
+
+d <- ts3$cf
+dhat <- 
+spm <- sparse.model.matrix(~., data=ts3)[,-1]
+V <- ts3$margin
+#V <- ts$party_win
+  
+double_lasso <- gamlr(cbind(d,dhat,spm), V, free=2)
+
+plot(double_lasso)
+coef(double_lasso)["d",]
+
+```
+
+
+
+
+#KNN Analysis 
+
+This chunk below basically determines the difference between intending to vote and actually turning out to vote. That's kind of interesting--we should see if we can use that voter turnout margin to predict the party that wins in that region. (Liberals are cocky fucks interpretation). Add as an extra layer, post overall KNN or double LASSo
+```{r}
+#V161011 <- registered to vote
+#V161010e <- state abr
+#V161019 <- registered party
+#V161030 <- intend to vote
+#V161031 <- candidate intended
+#V161241 <- is religion important
+
+subset(ts, V161030) #intending to vote in 2016
+subset(turnout_reg, Year==2016) #turnout in 2016 
+#compare by state to get margin, then use to predict party outcome
+```
+
+
+knn.impute took over ten minutes before I just killed it--what is happening??
+Remember to explain the reason we're treating NA -1 to -7 vs. the other NA values. 
+```{r}
+#-7 to -1 correspond to NaN, will use these as references
+#-8, -9, 998, 999 will be imputed with KNN
+ts[ts>100]<-NaN
+ts[(ts<0)&(ts>-8)]<-NaN
+na_count1 <-sapply(ts, function(y) sum(length(which(is.na(y))))) #this fucker right here
+na_count1/nrow(ts)
+knn.impute(as.matrix(ts[na_count1/nrow(ts)<0.5]), k=5) #kNNImpute in imputation ?
+na_count2 <-sapply(ts, function(y) sum(length(which(is.na(y)))))
+na_count2/nrow(ts)
+
+```
+
+
 
 
 #PCA Analysis
@@ -325,7 +359,10 @@ new_rel <- new_rel[, sapply(new_rel, function(col) length(unique(col))) > 1]
 new_rel
 
 pca<-prcomp(new_rel, scale=T)
-pca
+zpca <- predict(pca)
+
+
+lassoPCR <- cv.gamlr(zpca, y=)
 
 
 ```
