@@ -7,6 +7,7 @@ output: html_document
 
 #Reading, Cleaning Data
 
+ugh clean up the shitlist of packages we shouldn't be using this many
 ```{r setup, include=FALSE}
 
 setwd("E:/3rd/Spring/Big Data/project")
@@ -49,6 +50,7 @@ library(bnstruct)
 library(gdata)
 library(readxl)
 library(janitor)
+library(openintro)
 ```
 
 
@@ -166,7 +168,7 @@ However, we drop five cases between turnout and turnout_reg--what are these? The
 
 #Preliminary KNN Analysis 
 
-This chunk below basically determines the difference between intending to vote and actually turning out to vote. 
+This chunk below basically determines the difference between intending to vote and actually turning out to vote. That's kind of interesting--we should see if we can use that voter turnout margin to predict the party that wins in that region. (Liberals are cocky fucks interpretation). Add as an extra layer, post overall KNN or double LASSo
 ```{r}
 #V161011 <- registered to vote
 #V161010e <- state abr
@@ -175,19 +177,9 @@ This chunk below basically determines the difference between intending to vote a
 #V161031 <- candidate intended
 #V161241 <- is religion important
 
-subset(ts, V161030 & V161010e=="CA") #intending to vote in 2016 from CA
-subset(turnout_reg, (Abbreviation=="CA") & (Year==2016)) #turnout for CA 2016
-#dim(subset(ts, V161010e=="CA"))
-```
-
-
-Andy, what does this chunk do? 
-```{r}
-names(ts)[sapply(ts,class)=="double"]
-labelled<-names(ts)[sapply(ts, class)=="haven_labelled"]
-ts[, labelled]<-sapply(ts[,labelled], as.numeric)
-#sapply(ts, class)
-ts$V161001
+subset(ts, V161030) #intending to vote in 2016
+subset(turnout_reg, Year==2016) #turnout in 2016 
+#compare by state to get margin, then use to predict party outcome
 ```
 
 
@@ -203,11 +195,8 @@ na_count1/nrow(ts)
 knn.impute(as.matrix(ts[na_count1/nrow(ts)<0.5]), k=5)
 na_count2 <-sapply(ts, function(y) sum(length(which(is.na(y)))))
 na_count2/nrow(ts)
-#tr<-ts[(ts>0)&(ts<100)]
-#te<-ts[(ts==-8)|(ts==-9)|(ts==998)|(ts==999)]
-#ts[is.na(ts)]<-knn.cv(train=tr, test=te, cl=)
-```
 
+```
 
 
 
@@ -227,9 +216,6 @@ cf_cols<- c("committee_name",
             "fec_election_year")
 cf15_16 <- cf15_16[, cf_cols]
 unique(cf15_16$committee_name)
-
-p<-c("OBAMA FOR AMERICA"=="D") #yo Andy what does this do?
-#cf15_16$party<-apply(cf15_16$committee_name, 2, function(x) {x <- revalue(x, p); x})
 
 com_agg <-aggregate(cf15_16$disbursement_amount, 
                     by=list(Comittee=cf15_16$committee_name), 
@@ -288,6 +274,8 @@ com_agg2<-aggregate(disbursement_amount~party+recipient_state, cf15_16, sum)
 colnames(com_agg2)[colnames(com_agg2)=="recipient_state"]<-"Abbreviation"
 ```
 
+
+
 ```{r}
 #just 2016 turnout info
 turnout_16<-subset(turnout_reg, Year==2016)
@@ -307,18 +295,7 @@ com_agg3 <-
 turnout_cf <- 
   merge(turnout_16, com_agg3, by="Abbreviation")
 ```
-Ok so a question here: why does our com_agg3 (from com_agg) have abbreviations that aren't real? ZZ is not a state, and I suck at geography but we don't have 75 states. 
-
-```{r}
-#Method 1:  
-CF_turnout1<-merge(turnout_16, dem_CF, by="Abbreviation")
-colnames(CF_turnout1)[colnames(CF_turnout1)=="disbursement_amount"]<-"Dem.CF"
-CF_turnout2<-merge(CF_turnout1, rep_CF, by="Abbreviation")
-colnames(CF_turnout2)[colnames(CF_turnout2)=="disbursement_amount"]<-"Rep.CF"
-CF_turnout3<-merge(CF_turnout2, ind_CF, by="Abbreviation")
-colnames(CF_turnout3)[colnames(CF_turnout3)=="disbursement_amount"]<-"Ind.CF"
-CF_turnout3
-```
+Ok so a question here: why does our com_agg3 (from com_agg) have abbreviations that aren't real? ZZ is not a state, and I suck at geography but we don't have 75 states. OMG ZZ IS THE *DEEP* STATE??!!
 
 
 #PCA Analysis?
@@ -343,8 +320,7 @@ pca<-prcomp(new_rel, scale=T)
 
 ```{r}
 #ONLY RUN THIS ONCE OR THE PERCENTS JUST GET SMALLER AND SMALLER,
-#or change the code somehow
-#columns that have percents in them
+#or change the code somehow--columns have percents in them
 percent_cols<-c("VEP.Total.Ballots.Counted", "VEP.Highest.Office", "VAP.Highest.Office", "X..Non.citizen")
 #change these columns into decimals
 turnout_cf[, percent_cols]<- 
@@ -354,6 +330,7 @@ turnout_cf[, percent_cols]<-
 ```
 
 
+#Random Forest
 ```{r}
 #election results by state
 results<-read_excel("G-politicians.xls")
@@ -361,60 +338,52 @@ clean_names(results)
 colnames(results)[colnames(results)=="state_abbreviation"]<-"Abbreviation"
 
 #fix some weird names so its all D/R
-results$`Balloted party`[(results$`Balloted party`=="Republican, American Independent")|(results$`Balloted party`=="Conservative, Republican")]<-"Republican"
+results$`Balloted party(ies)`[(results$`Balloted party(ies)`=="Republican, American Independent")|(results$`Balloted party(ies)`=="Conservative, Republican")]<-"Republican"
 
-results$`Balloted party`[(results$`Balloted party`=="Democratic-Nonpartisan League")|(results$`Balloted party`=="Democratic-Farmer Labor")|(results$`Balloted party`=="Working Families, Women's Equality, Democratic")]<-"Democratic"
+results$`Balloted party(ies)`[(results$`Balloted party(ies)`=="Democratic-Nonpartisan League")|(results$`Balloted party(ies)`=="Democratic-Farmer Labor")|(results$`Balloted party(ies)`=="Working Families, Women's Equality, Democratic")]<-"Democratic"
 
 #only take presidential candidates who are D/R
-results<-subset(results,(`Office abbreviation`=="P")&((`Balloted party`=="Republican")|(`Balloted party`=="Democratic")))
+results<-subset(results,(`Office abbreviation`=="P")&((`Balloted party(ies)`=="Republican")|(`Balloted party(ies)`=="Democratic")))
 
 ```
 
-What does it mean that our margin is Nan 
 ```{r}
-#df with state and margin 
-state_converter1<-read.csv("State_converter.txt")
-pop_vote<-data.frame(Abbreviation=state_converter1$Abbreviation, margin=NaN)
+resultsm <-
+  results %>%
+  select("Last",
+         "Popular vote",
+         "State abbreviation") %>%
+  spread(Last, `Popular vote`) %>%
+  mutate(margin = Clinton-Trump,
+         party_win = if_else(margin > 0, "D", "R"),
+         Abbreviation = `State abbreviation`)
 
-#for each state, get the votes for each party, subtract them to get difference, add it to the df pop_vote
-for (state in state_converter$Abbreviation){
-  dem<-subset(results, (Abbreviation==state)&(`Balloted party`=="Democratic"), select=popular_vote)
-  rep<-subset(results, (Abbreviation==state)&(`Balloted party`=="Republican"), select=popular_vote)
-  m<-dem$popular_vote-rep$popular_vote
-  print(state)
-  pop_vote$margin[pop_vote$Abbreviation==state]<-m
-}
-#add who won the popular vote
-pop_vote$Winner[pop_vote$margin>0]<-"D"
-pop_vote$Winner[pop_vote$margin<0]<-"R"
-head(pop_vote)
 ```
 
 
-AHHHH SO MANY NASSSS WHAT IS HAPPENING SO MUCH COERCION
 ```{r}
 #merge vote margin and winner with turnout/CF df
-#ISSUE: converting the total votes column (read in as a factor) into a numeric so we can get a percentage (to account for difference in voting populations of each state)
-as.numeric.factor <- function(x) {as.numeric(levels(x))[x]}
-asNumeric <- function(x) as.numeric(as.character(x))
-factorsNumeric <- function(d) modifyList(d, lapply(d[, sapply(d, is.factor)],   
-                                                   asNumeric))
-CF_to_pop<-merge(turnout_cf, pop_vote, by="Abbreviation")
-CF_to_pop2<-factorsNumeric(CF_to_pop)
-#CF_to_pop2
-f<-CF_to_pop$Highest.Office
-as.numeric(levels(f))[as.integer(f)]
-#CF_to_pop$Highest.Office<-as.numeric(levels(f))[f]
-#CF_to_pop
-#as.numeric.factor(CF_to_pop$Highest.Office)
-CF_to_pop$margin_dec<-as.numeric(CF_to_pop$margin)/(CF_to_pop$Highest.Office)
-#head(CF_to_pop)
+CF_pop<- merge(turnout_cf, resultsm, by="Abbreviation")%>%
+  select("Abbreviation",
+         "Highest.Office",
+         "D",
+         "I",
+         "R",
+         "margin",
+         "Clinton",
+         "Trump",
+         "party_win") %>%
+  mutate(vote_pres = gsub( ',', '', CF_pop$Highest.Office),
+         vote_per = as.numeric(as.character(vote_pres)),
+         margin_per = margin/vote_per)
+
 ```
 
+We now have numeric total votes column--just need a fucking random forest now
 
 ```{r}
 #decision tree with finances
-tree_ex<-tree(as.numeric(VEP.Highest.Office)~Dem.CF+Rep.CF+Ind.CF, data=turnout_cf)
-plot(tree_ex)
+tree_ex<-tree(vote_per~D+R+I, data=turnout_cf)
+plot(tree_ex) #this. keeps. giving. me. an error. :(
 text(tree_ex)
 ```
