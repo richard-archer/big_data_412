@@ -33,24 +33,25 @@ havingIP <- function() {
 }
 havingIP()
 
+library(knitr)
 library(dplyr)
+library(tidyverse)
+library(haven)
+library(gamlr)
 library(igraph)
+library(readxl)
+library(openintro)
+library(tree)
+library(randomForest)
+library(plyr)
 library(arules)
 library(textir)
-library(maptpx)
-library(wordcloud)
-library(gamlr)
-library(foreign)
-library(haven)
-library(tidyverse)
-library(randomForest)
-library(class)
-library(plyr)
-library(bnstruct)
-library(gdata)
-library(readxl)
-library(janitor)
-library(openintro)
+# library(maptpx)
+# library(foreign)
+# library(class)
+# library(bnstruct)
+# library(gdata)
+# library(janitor)
 ```
 
 
@@ -88,7 +89,8 @@ colnames(upto2k14) <- c("Year",
                         "Probation",
                         "Parole",
                         "TIFelon",
-                        "Overseas")
+                        "Overseas",
+                        "Abbreviation")
 upto2k14 <-
   upto2k14 %>% 
   filter(State != "United States") %>%
@@ -192,7 +194,7 @@ ts[ts>100]<-NaN
 ts[(ts<0)&(ts>-8)]<-NaN
 na_count1 <-sapply(ts, function(y) sum(length(which(is.na(y))))) #this fucker right here
 na_count1/nrow(ts)
-knn.impute(as.matrix(ts[na_count1/nrow(ts)<0.5]), k=5)
+knn.impute(as.matrix(ts[na_count1/nrow(ts)<0.5]), k=5) #kNNImpute in imputation ?
 na_count2 <-sapply(ts, function(y) sum(length(which(is.na(y)))))
 na_count2/nrow(ts)
 
@@ -298,43 +300,14 @@ turnout_cf <-
 Ok so a question here: why does our com_agg3 (from com_agg) have abbreviations that aren't real? ZZ is not a state, and I suck at geography but we don't have 75 states. OMG ZZ IS THE *DEEP* STATE??!!
 
 
-#PCA Analysis?
-
-holy shit what's happening what are these errors
-```{r}
-rel<-aggregate(ts[,!(names(ts) %in% c("V161010e", "version"))], by=list(Rel=ts$V161241), mean)
-rel$V162084
-#rel
-#pca<-prcomp(rel, scale=T)
-#pca
-na_count <-sapply(ts, function(y) sum(length(which(is.na(y)))))
-#na_count["V161010e"]/nrow(ts)
-na_count[na_count>0.00001]
-rel_na<-sapply(rel, function(y) sum(length(which(is.na(y)))))
-bad_names<-names(rel_na)[rel_na>0]
-new_rel<-aggregate(ts[,!(names(ts) %in% c(bad_names, "V161010e", "version"))], by=list(Rel=ts$V161241), mean)
-
-pca<-prcomp(new_rel, scale=T)
-```
-
-
-```{r}
-#ONLY RUN THIS ONCE OR THE PERCENTS JUST GET SMALLER AND SMALLER,
-#or change the code somehow--columns have percents in them
-percent_cols<-c("VEP.Total.Ballots.Counted", "VEP.Highest.Office", "VAP.Highest.Office", "X..Non.citizen")
-#change these columns into decimals
-turnout_cf[, percent_cols]<- 
-  apply(turnout_cf[, percent_cols], 2, 
-        function(x){as.numeric(sub("%", "", x, fixed=TRUE))/100})
-
-```
-
+#PCA Analysis
+Refer to Riya's working version on Git
 
 #Random Forest
 ```{r}
 #election results by state
 results<-read_excel("G-politicians.xls")
-clean_names(results)
+#clean_names(results)
 colnames(results)[colnames(results)=="state_abbreviation"]<-"Abbreviation"
 
 #fix some weird names so its all D/R
@@ -345,9 +318,7 @@ results$`Balloted party(ies)`[(results$`Balloted party(ies)`=="Democratic-Nonpar
 #only take presidential candidates who are D/R
 results<-subset(results,(`Office abbreviation`=="P")&((`Balloted party(ies)`=="Republican")|(`Balloted party(ies)`=="Democratic")))
 
-```
-
-```{r}
+#here's our popular vote margin
 resultsm <-
   results %>%
   select("Last",
@@ -357,13 +328,13 @@ resultsm <-
   mutate(margin = Clinton-Trump,
          party_win = if_else(margin > 0, "D", "R"),
          Abbreviation = `State abbreviation`)
-
 ```
 
 
 ```{r}
 #merge vote margin and winner with turnout/CF df
-CF_pop<- merge(turnout_cf, resultsm, by="Abbreviation")%>%
+CF_pop <- 
+  merge(turnout_cf, resultsm, by="Abbreviation")%>%
   select("Abbreviation",
          "Highest.Office",
          "D",
@@ -373,17 +344,17 @@ CF_pop<- merge(turnout_cf, resultsm, by="Abbreviation")%>%
          "Clinton",
          "Trump",
          "party_win") %>%
-  mutate(vote_pres = gsub( ',', '', CF_pop$Highest.Office),
-         vote_per = as.numeric(as.character(vote_pres)),
+  mutate(vote_per = as.numeric(as.character(gsub( ',', '', Highest.Office))),
          margin_per = margin/vote_per)
-
 ```
 
 We now have numeric total votes column--just need a fucking random forest now
-
 ```{r}
 #decision tree with finances
-tree_ex<-tree(vote_per~D+R+I, data=turnout_cf)
-plot(tree_ex) #this. keeps. giving. me. an error. :(
-text(tree_ex)
+par(mfrow=c(1,2))
+plot.new()
+tree_ex<-tree(margin~vote_per+D+R+I, data=CF_pop, mincut =1)
+plot(tree_ex)
+
+#text(tree_ex, splits = TRUE)
 ```
