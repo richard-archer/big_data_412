@@ -49,9 +49,11 @@ library(textir)
 ```
 
 
-```{r}
+```{r read in data }
 #read in survey data
 ts <- read_dta("timeseries_2016_dta.zip")
+
+filing <- read.delim("ftf-all-filings.tsv", sep = "\t")
 
 #read in the turnout data
 upto2k14<-read.csv("1980-2014_nge_turnout.csv", skip=1, header=T)
@@ -64,7 +66,7 @@ bad_other<-c("State.Results.Website", "Status")
 ```
 
 
-```{r}
+```{r combine turnout add regions}
 #Combine all the turnout info and add regions
 
 #upto2k14 column names
@@ -83,8 +85,7 @@ colnames(upto2k14) <- c("Year",
                         "Probation",
                         "Parole",
                         "TIFelon",
-                        "Overseas",
-                        "Abbreviation")
+                        "Overseas")
 upto2k14 <-
   upto2k14 %>% 
   filter(State != "United States") %>%
@@ -161,8 +162,7 @@ We drop five cases between turnout and turnout_reg--what are these? They're not 
 
 
 #Campaign Finance
-```{r}
-#campaign finance stuff
+```{r campaign finance}
 cf15_16<-read.csv("Contributions_15-16.csv")
 cf_cols<- c("committee_name", 
             "report_year", 
@@ -183,9 +183,6 @@ com_agg <-aggregate(cf15_16$disbursement_amount,
 colnames(com_agg)[colnames(com_agg)=="x"]<-"Spending"
 cut_df<-as.data.frame(com_agg)[com_agg$Spending>1000000,]
 
-```
-
-```{r}
 #figure out which candidates are most importatnt
 cut_df$Comittee
 
@@ -255,126 +252,10 @@ com_agg3 <-
   spread(party, disbursement_amount)
 turnout_cf <- 
   merge(turnout_16, com_agg3, by="Abbreviation")
-
 ```
 Ok so a question here: why does our com_agg3 (from com_agg) have abbreviations that aren't real? ZZ is not a state, and I suck at geography but we don't have 75 states. OMG ZZ IS THE *DEEP* STATE??!!
 
-
-
-#Double-LASSO
-
-```{r}
-ts1 <- mutate(ts, Abbreviation = V161010e)
-ts2<- merge(ts1, reg_converter, by="Abbreviation")
-
-#at this point, we take our ts dataframe, and we add campaign finance by state
-#Campaign finance is from com_agg3, and we sum the total amount spent in that state
-State_converter <- read.csv("State_converter.txt")
-com_agg3 <- filter(com_agg3, Abbreviation %in% State_converter$Abbreviation)
-cf_lasso <- merge(com_agg3, resultsm, by = "Abbreviation")
-cf_lasso[is.na(cf_lasso)] <- 0
-cf_lasso <- cf_lasso %>% mutate(cf = D + I + R)
-#alright at this point, cf_lasso has party spending, total spending, and who won
-
-ts3 <- merge(ts2, cf_lasso, by = "Abbreviation")
-ts3
-```
-
-```{r}
-#LASSO TIME BITCHES
-#d = campaign finance, dhat = , V = margin or party_win
-#bc we want to see whether campaign finance is helpful in predicting outcome
-
-d <- ts3$cf
-dhat <- 
-spm <- sparse.model.matrix(~., data=ts3)[,-1]
-V <- ts3$margin
-#V <- ts$party_win
-  
-double_lasso <- gamlr(cbind(d,dhat,spm), V, free=2)
-
-plot(double_lasso)
-coef(double_lasso)["d",]
-
-```
-
-
-
-
-#Possibly use this to run a simple lasso if we're really fucked for time
-
-This chunk below basically determines the difference between intending to vote and actually turning out to vote. That's kind of interesting--we should see if we can use that voter turnout margin to predict the party that wins in that region. (Liberals are cocky fucks interpretation). Add as an extra layer, post overall KNN or double LASSo
-
-```{r}
-#V161011 <- registered to vote
-#V161010e <- state abr
-#V161019 <- registered party
-#V161030 <- intend to vote
-#V161031 <- candidate intended
-#V161241 <- is religion important
-
-subset(ts, V161030) #intending to vote in 2016
-subset(turnout_reg, Year==2016) #turnout in 2016 
-#compare by state to get margin, then use to predict party outcome
-```
-
-
-
-#KNN Analysis 
-
-knn.impute took over ten minutes before I just killed it--what is happening??
-Remember to explain the reason we're treating NA -1 to -7 vs. the other NA values. 
-```{r}
-#-7 to -1 correspond to NaN, will use these as references
-#-8, -9, 998, 999 will be imputed with KNN
-ts[ts>100]<-NaN
-ts[(ts<0)&(ts>-8)]<-NaN
-na_count1 <-sapply(ts, function(y) sum(length(which(is.na(y))))) #this fucker right here
-na_count1/nrow(ts)
-knn.impute(as.matrix(ts[na_count1/nrow(ts)<0.5]), k=5) #kNNImpute in imputation ?
-na_count2 <-sapply(ts, function(y) sum(length(which(is.na(y)))))
-na_count2/nrow(ts)
-
-```
-
-
-
-
-#PCA Analysis
-```{r}
-rel<-aggregate(ts[,!(names(ts) %in% c("V161010e", "version"))], by=list(Rel=ts$V161241), mean)
-rel$V162084
-
-#rel
-#pca<-prcomp(rel, scale=T)
-#pca
-na_count <-sapply(ts, function(y) sum(length(which(is.na(y)))))
-
-#na_count["V161010e"]/nrow(ts)
-na_count[na_count>0.00001]
-
-rel_na<-sapply(rel, function(y) sum(length(which(is.na(y)))))
-
-bad_names<-names(rel_na)[rel_na>0]
-
-new_rel<-aggregate(ts[,!(names(ts) %in% c(bad_names, "V161010e", "version"))], by=list(Rel=ts$V161241), mean)
-
-#so what I did here was dropped all columns that had the same value for each row. this is what made the pca work - riya
-new_rel <- new_rel[, sapply(new_rel, function(col) length(unique(col))) > 1] 
-new_rel
-
-pca<-prcomp(new_rel, scale=T)
-zpca <- predict(pca)
-
-
-lassoPCR <- cv.gamlr(zpca, y=)
-
-
-```
-
-
-#Random Forest
-```{r}
+```{r adding in results}
 #election results by state
 results<-read_excel("G-politicians.xls")
 #clean_names(results)
@@ -398,10 +279,7 @@ resultsm <-
   mutate(margin = Clinton-Trump,
          party_win = if_else(margin > 0, "D", "R"),
          Abbreviation = `State abbreviation`)
-```
 
-
-```{r}
 #merge vote margin and winner with turnout/CF df
 CF_pop <- 
   merge(turnout_cf, resultsm, by="Abbreviation")%>%
@@ -414,16 +292,146 @@ CF_pop <-
          "Clinton",
          "Trump",
          "party_win") %>%
-  mutate(vote_per = as.numeric(as.character(gsub( ',', '', Highest.Office))),
-         margin_per = margin/vote_per)
+  mutate(vote_per = as.numeric(as.character(gsub(',', '', Highest.Office))),
+         margin_per = margin/vote_per,
+         cf = D + I + R)
+#alright at this point, cf_pop has party spending, total spending, and who won
+
+ts1 <- mutate(ts, Abbreviation = V161010e)
+
+#ts + campaign finance, total spending, results by state
+ts3 <- merge(ts1, CF_pop, by = "Abbreviation")
+
+#aight ts3 is our master dataframe
 ```
 
-We now have numeric total votes column--just need a fucking random forest now
+
+
+#Campaign Finance Take 2
 ```{r}
+#need to resolve missing values in contribution amount 
+filing1 <- 
+  filing %>%
+  select(-c(url,thumbnail_url))
+# nb: id is the only column that has no missing or NA values
+# id: literally every row is different 
+# 
+
+```
+
+
+```{r}
+
+
+#literally find the percentages of columns
+andy <- 
+  ts3 %>% 
+  
+
+
+```
+
+
+
+#Double-LASSO
+```{r}
+#d = campaign finance, dhat = , V = margin
+#bc we want to see whether campaign finance is helpful in predicting outcome
+
+d <- ts3$cf
+spm <- sparse.model.matrix(~., data=ts3)[,-1]
+V <- ts3$margin
+
+double_lasso <- gamlr(cbind(d,dhat,ts3), V, free=2)
+
+plot(double_lasso)
+coef(double_lasso)["d",]
+
+```
+
+#Possibly use this to run a simple lasso if we're really fucked for time
+
+This chunk below basically determines the difference between intending to vote and actually turning out to vote. That's kind of interesting--we should see if we can use that voter turnout margin to predict the party that wins in that region. (Liberals are cocky fucks interpretation). Add as an extra layer, post overall KNN or double LASSo
+
+```{r simple lasso fuck}
+#V161011 <- registered to vote
+#V161010e <- state abr
+#V161019 <- registered party
+#V161030 <- intend to vote
+#V161031 <- candidate intended
+#V161241 <- is religion important
+
+subset(ts, V161030 = 1) #intending to vote in 2016
+subset(turnout_reg, Year==2016) #turnout in 2016 
+#compare by state to get margin, then use to predict party outcome
+
+ts_vote <-
+  ts3 %>%
+  mutate(intend_vote = if_else(V161030 = 1, 1,0),
+         intend_d = if_else(intend_vote = 1 & V161019 = 1, 1, 0),
+         intend_r = if_else(intend_vote = 1 & V161019 = 2, 1, 0))
+```
+
+
+
+#KNN Analysis 
+knn.impute took over ten minutes before I just killed it--what is happening??
+Remember to explain the reason we're treating NA -1 to -7 vs. the other NA values. 
+```{r knn analysis}
+#-7 to -1 correspond to NaN, will use these as references
+#-8, -9, 998, 999 will be imputed with KNN
+ts[ts>100]<-NaN
+ts[(ts<0)&(ts>-8)]<-NaN
+na_count1 <-sapply(ts, function(y) sum(length(which(is.na(y))))) #this fucker right here
+na_count1/nrow(ts)
+
+knn.impute(as.matrix(ts[na_count1/nrow(ts)<0.5]), k=5) #kNNImpute in imputation ?
+na_count2 <-sapply(ts, function(y) sum(length(which(is.na(y)))))
+na_count2/nrow(ts)
+```
+
+
+
+
+#PCA Analysis
+```{r pca analysis}
+rel<-aggregate(ts[,!(names(ts) %in% c("V161010e", "version"))], by=list(Rel=ts$V161241), mean)
+rel$V162084
+
+#pca<-prcomp(rel, scale=T)
+#pca
+na_count <-sapply(ts, function(y) sum(length(which(is.na(y)))))
+
+#na_count["V161010e"]/nrow(ts)
+na_count[na_count>0.00001]
+
+rel_na<-sapply(rel, function(y) sum(length(which(is.na(y)))))
+
+bad_names<-names(rel_na)[rel_na>0]
+
+new_rel<-aggregate(ts[,!(names(ts) %in% c(bad_names, "V161010e", "version"))], by=list(Rel=ts$V161241), mean)
+
+#so what I did here was dropped all columns that had the same value for each row. this is what made the pca work - riya
+new_rel <- new_rel[, sapply(new_rel, function(col) length(unique(col))) > 1] 
+new_rel
+
+pca<-prcomp(new_rel, scale=T)
+zpca <- predict(pca)
+
+lassoPCR <- cv.gamlr(zpca, y=)
+```
+
+
+#Random Forest
+
+We now have numeric total votes column--just need a fucking random forest now
+```{r decision tree with finance}
 #decision tree with finances
-par(mfrow=c(1,2))
-plot.new()
+
 tree_ex<-tree(margin~vote_per+D+R+I, data=CF_pop, mincut =1)
+
 plot(tree_ex)
 text(tree_ex, splits = TRUE)
+#kDTree(tree_ex)
+
 ```
