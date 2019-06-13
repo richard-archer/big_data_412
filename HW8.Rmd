@@ -276,7 +276,7 @@ CF_turnout3
 ```{r}
 rel<-aggregate(ts[,!(names(ts) %in% c("V161010e", "version"))], by=list(Rel=ts$V161241), mean)
 
-rel$V162084
+#rel$V162084
 
 #rel
 
@@ -286,10 +286,10 @@ rel$V162084
 
 
 
-na_count <-sapply(ts, function(y) sum(length(which(is.na(y)))))
+na_count <-sapply(ts, function(y) sum(length(which(y<0))))
 #na_count["V161010e"]/nrow(ts)
 
-na_count[na_count>0.00001]
+good_names<-names(na_count)[na_count/nrow(ts)<0.1]
 
 rel_na<-sapply(rel, function(y) sum(length(which(is.na(y)))))
 
@@ -306,7 +306,7 @@ pca<-prcomp(new_rel, scale=T)
 
 
 #columns that have percents in them
-percent_cols<-c("VEP.Total.Ballots.Counted", "VEP.Highest.Office", "VAP.Highest.Office", "X..Non.citizen")
+percent_cols<-c("VEP.Total.Ballots.Counted", "VEP.Highest.Office", "VAP.Highest.Office", "non-citizen")
 
 #change these columns into decimals
 CF_turnout3[, percent_cols]<- apply(CF_turnout3[, percent_cols],2, function(x){
@@ -340,7 +340,6 @@ for (state in state_converter1$Abbreviation){
   dem<-subset(results, (Abbreviation==state)&(balloted_party_ies=="Democratic"), select=popular_vote)
   rep<-subset(results, (Abbreviation==state)&(balloted_party_ies=="Republican"), select=popular_vote)
   m<-dem$popular_vote-rep$popular_vote
-  print(state)
   pop_vote$margin[pop_vote$Abbreviation==state]<-m
 }
 
@@ -356,29 +355,252 @@ head(pop_vote)
 
 #ISSUE: converting the total votes column (read in as a factor) into a numeric so we can get a percentage (to account for difference in voting populations of each state)
 
-as.numeric.factor <- function(x) {as.numeric(levels(x))[x]}
+#as.numeric.factor <- function(x) {as.numeric(levels(x))[x]}
 
-asNumeric <- function(x) as.numeric(as.character(x))
-factorsNumeric <- function(d) modifyList(d, lapply(d[, sapply(d, is.factor)],   
-                                                   asNumeric))
+#asNumeric <- function(x) as.numeric(as.character(x))
+#factorsNumeric <- function(d) modifyList(d, lapply(d[, sapply(d, is.factor)],   
+#                                                   asNumeric))
 
 
 
 CF_to_pop<-merge(CF_turnout3, pop_vote, by="Abbreviation")
 
-CF_to_pop2<-factorsNumeric(CF_to_pop)
+#CF_to_pop2<-factorsNumeric(CF_to_pop)
 #CF_to_pop2
-f<-CF_to_pop$Highest.Office
-as.numeric(levels(f))[as.integer(f)]
+CF_to_pop$Highest.Office<-as.numeric(as.character(gsub( ',', '', CF_to_pop$Highest.Office)))
 #CF_to_pop$Highest.Office<-as.numeric(levels(f))[f]
 #CF_to_pop
 #as.numeric.factor(CF_to_pop$Highest.Office)
-CF_to_pop$margin_dec<-as.numeric(CF_to_pop$margin)/(CF_to_pop$Highest.Office)
-#head(CF_to_pop)
+CF_to_pop$margin_dec<-CF_to_pop$margin/(CF_to_pop$Highest.Office)
+
+CF_to_pop <- CF_to_pop %>% mutate(CF = Dem.CF + Ind.CF + Rep.CF)
+
+ts_a<-mutate(ts, Abbreviation=V161010e)
+ts3<-merge(ts_a, CF_to_pop, by="Abbreviation")
+head(ts3)
+```
+
+```{r}
+#function(x){
+#  CF_to_pop[,x]<-as.numeric(as.character(gsub( ',', '', #CF_to_pop[,x])))
+#}
+
+asNumeric <- function(x) as.numeric(as.character(gsub(',', '', x)))
+#asNumeric(CF_to_pop$VEP)
+factorsNumeric <- function(d) modifyList(d, lapply(d[, sapply(d, is.factor)], asNumeric))
+CF_to_pop<-factorsNumeric(CF_to_pop)
+CF_to_pop2<-select(CF_to_pop, -c("State", "Overseas", "VEP.Total.Ballots.Counted", "Total.Ballots.Counted", "Abbreviation", "Year", "Region", "Winner"))
+CF_to_pop3<-select(CF_to_pop, -c("State", "Overseas", "VEP.Total.Ballots.Counted", "Total.Ballots.Counted","Year"))
+
+cf_na<-sapply(CF_to_pop2, function(y) sum(length(which(is.na(y)))))
+
+sapply(CF_to_pop2, is.numeric)
+
+library(FactoMineR)
+famd<-FAMD(CF_to_pop3)
+famd$eig
+
+pca<-prcomp(CF_to_pop2, scale=T)
+z<-predict(pca)
+#pca_lasso<-gamlr(CF_to_pop$Winner, z)
+#coef(pca_lasso)
+
+```
+
+```{r}
+#V161241 <- is religion important
+#V161342 <- ~gender~
+#V161310a <- white or nah
+#V161010e <- state
+#V168023 <- income
+#V168110 <- est age
+
+list_cols<-c("version", "V160001", "V160001_orig")
+weights<-c("V160102", "V160101", "V160102f", "V160101f", "V160102w", "V160101w")
+strata_weights<-c("V160201", "V160201f", "V160201w", "V160202", "V160202f", "V160202w")
+interview_type<-c("V160501", "V160502")
+
+ts_nl<-select(ts, -c(list_cols, weights, strata_weights, interview_type))
+
+
+#takes a bit to run
+ts_f<-as_factor(ts_nl, only_labelled = T, levels="values")
+
+factor_ts<-Filter(is.factor, ts_f)
 ```
 
 
+```{r}
+Abbreviation<-ts$V161010e
+
+
+f_state_ts<-cbind(Abbreviation, factor_ts)
+
+
+#spread(f_state_ts, f_state_ts$Abbreviation, f_state_ts$V161005)
+#prop.table(table(f_state_ts$Abbreviation, f_state_ts[, "V161001"]), 1)
+props<-data.frame(Abbreviation=state_converter$Abbreviation)
+
+
+
+d<-as.data.frame.matrix(prop.table(table(f_state_ts$Abbreviation, f_state_ts[, "V161001"]), 1))
+
+d <- cbind(rownames(d), as.data.frame(d, row.names=NULL))
+colnames(d)[colnames(d)=="rownames(d)"]<-"Abbreviation"
+rownames(d)<-c()
+
+#head(d)
+
+m<-merge(props, d, by="Abbreviation")
+#head(m)
+
+start_time<-Sys.time()
+for (col in names(factor_ts)){
+  pt<-prop.table(table(f_state_ts$Abbreviation, f_state_ts[, col]), 1)
+  colnames(pt)<-paste(col, colnames(pt), sep="_")
+  p<-as.data.frame.matrix(pt)
+  p <- cbind(rownames(p), as.data.frame(p, row.names=NULL))
+  colnames(p)[colnames(p)=="rownames(p)"]<-"Abbreviation"
+  rownames(p)<-c()
+  props<-merge(props, p, by="Abbreviation")
+  stop_time<-Sys.time()
+  print(stop_time-start_time)
+}
+  
+props
 ```
+ 
+```{r}
+write.csv(props, file="./Data/Prop.csv")
+```
+
+```{r}
+prop2<-props[props$Abbreviation!="DC"]
+everything<-merge(CF_to_pop, prop2, by="Abbreviation")
+write.csv(everything, file="./Data/CF_to_res_ts.csv")
+```
+  
+```{r}
+}
+as.data.frame(prop.table(table(f_state_ts$Abbreviation, f_state_ts$V161005)))
+
+freq_list<-f_state_ts%>%
+  group_by(Abbreviation)%>%
+  lapply(f_state_ts, FUN=table)%>%
+  lapply(f_state_ts, FUN=prop.table)
+
+
+
+
+head(freq_list)
+prop_df<-mapply(prop.table, freq_list)
+head(prop_df)
+
+f_state_ts%>%
+  group_by(Abbreviation)%>%
+  summarise(c=count(Abbreviation)$freq)
+
+head(f_state_ts)
+  
+
+dim(count(factor_ts, names(factor_ts)))
+
+#head(f_state_ts)
+
+length(ts$V161010e)
+dim(factor_ts)
+
+typeof(ts$V161010e)
+
+tab<-table(f_state_ts)
+props<-prop.table(tab)
+
+props
+
+#use this to get rid of version column if needed
+
+#set up columns to exclude
+
+#compl_status<-c("")
+
+
+na_count <-sapply(ts_nl, function(y) sum(length(which(y<0))))
+#na_count["V161010e"]/nrow(ts)
+
+
+
+good_names<-names(na_count)[na_count/nrow(ts_nl)<0.1]
+
+very_good_names<-names(na_count)[na_count/nrow(ts_nl)==0]
+
+
+lasso_cols<-c("V161241", "V161342", "V161310a")
+
+good_lasso_cols<-c("V161241", "V161342")
+
+cont_lasso_cols<-c("V168023")
+
+#count(ts$V168023==1)
+count(ts$V168023)
+count(ts$V168023)$freq[3]
+
+for (val in c(1:length(count(ts$V168023)$x))){
+  print(val)
+  print(count(ts$V168023)$freq[val]/sum(count(ts$V168023)$freq))
+}
+
+tsg<-aggregate(na.omit(ts_nl[,very_good_names]), by=list(State=ts$V161010e), function(x){for (val in c(1:length(count(x)$x))){(count(x)$freq[val])/(sum(count(x)$freq))}})
+
+tsg
+
+#tsg1<-aggegate(na.omit(ts[ ]))
+
+#tsg2<-tsg[tsg$State!="DC",] %>%
+#  mutate(salt = replace_na(V161310a, 0)) %>%
+#  select(-c(V161310a, State))
+
+#head(tsg2)
+
+#tsg <- mutate(ts, perrel = group_by(V161010e, count(V161241=1)))
+
+spm <- sparse.model.matrix(~., data=tsg)[,-1]#[, c("V161241", "V161342", "salt")])[,-1]
+
+#spm2<-spm[,!(state=="DC") ]
+#spm2
+
+d<-CF_to_pop$CF
+#dim(tsg2)
+#dim(spm)
+#length(CF_to_pop$CF)
+
+treat_lasso<-gamlr(spm, d)
+
+dhat<-predict(treat_lasso, spm)
+
+V<-CF_to_pop$VEP.Highest.Office
+
+#cbind(d, dhat, spm)
+
+D<-CF_to_pop$Dem.CF
+R<-CF_to_pop$Rep.CF
+I<-CF_to_pop$Ind.CF
+
+d_lasso<-gamlr(cbind(d,dhat,spm), V, free=2)
+coef(d_lasso)
+dlasso_plot<-plot(d_lasso)
+```
+
+
+```{r}
+ftf<-read.delim("./Data/ftf-all-filings.tsv")
+```
+
+```{r}
+ftf$gross_amount[ftf$committee=="NRA POLITICAL VICTORY FUND"]
+```
+
+
+
 ```{r}
 #decision tree with finances
 tree_ex<-tree(as.numeric(VEP.Highest.Office)~Dem.CF+Rep.CF+Ind.CF, data=CF_turnout3)
