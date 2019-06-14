@@ -37,6 +37,9 @@ library(bnstruct)
 library(gdata)
 library(readxl)
 library(janitor)
+library(bigmemory)
+library(biglasso)
+library(methods)
 ```
 
 
@@ -130,7 +133,8 @@ turnout2<-select(turnout2, colnames(to2k16))
 colnames(turnout2)
 colnames(to2k16)
 colnames(to2k18)
-turnout<-rbind(turnout2, to2k16, to2k18)
+#excluding 2018 for now
+turnout<-rbind(turnout2, to2k16)#, to2k18)
 
 #add regions to turnout data
 turnout_reg<-merge(turnout, reg_converter, by="Abbreviation")
@@ -255,7 +259,9 @@ turnout_16<-subset(turnout_reg, Year==2016)
 #disbursements by state
 dem_CF<-subset(com_agg2, party=="D", select=c("disbursement_amount", "Abbreviation"))
 rep_CF<-subset(com_agg2, party=="R", select=c("disbursement_amount", "Abbreviation"))
-ind_CF<-subset(com_agg2, party=="I", select=c("disbursement_amount", "Abbreviation"))
+ind_CF1<-subset(com_agg2, party=="I", select=c("disbursement_amount", "Abbreviation"))
+AR_df<-data.frame(disbursement_amount=0, Abbreviation="AR")
+ind_CF<-rbind(ind_CF1, AR_df)
 ```
 
 ```{r}
@@ -270,7 +276,18 @@ colnames(CF_turnout2)[colnames(CF_turnout2)=="disbursement_amount"]<-"Rep.CF"
 CF_turnout3<-merge(CF_turnout2, ind_CF, by="Abbreviation")
 colnames(CF_turnout3)[colnames(CF_turnout3)=="disbursement_amount"]<-"Ind.CF"
 
-CF_turnout3
+CF_turnout3$Ind.CF[CF_turnout3$Abbreviation=="AR" ]<-0
+
+#CF_turnout3[CF_turnout3$Abbreviation=="AR",]
+
+#dim(rep_CF)
+#state_converter$Abbreviation
+#CF_turnout2$Abbreviation[CF_turnout2$Abbreviation %in% state_converter1$Abbreviation]
+#ind_CF$Abbreviation[ind_CF$Abbreviation %in% state_converter1$Abbreviation]
+#$Abbreviation
+#dim(CF_turnout1)
+#dim(CF_turnout2)
+#dim(CF_turnout3)
 ```
 
 ```{r}
@@ -287,7 +304,7 @@ rel<-aggregate(ts[,!(names(ts) %in% c("V161010e", "version"))], by=list(Rel=ts$V
 
 
 na_count <-sapply(ts, function(y) sum(length(which(y<0))))
-#na_count["V161010e"]/nrow(ts)
+na_count["V161010e"]/nrow(ts)
 
 good_names<-names(na_count)[na_count/nrow(ts)<0.1]
 
@@ -306,7 +323,7 @@ pca<-prcomp(new_rel, scale=T)
 
 
 #columns that have percents in them
-percent_cols<-c("VEP.Total.Ballots.Counted", "VEP.Highest.Office", "VAP.Highest.Office", "non-citizen")
+percent_cols<-c("VEP.Total.Ballots.Counted", "VEP.Highest.Office", "VAP.Highest.Office", "X..Non.citizen")
 
 #change these columns into decimals
 CF_turnout3[, percent_cols]<- apply(CF_turnout3[, percent_cols],2, function(x){
@@ -362,7 +379,8 @@ head(pop_vote)
 #                                                   asNumeric))
 
 
-
+dim(CF_turnout3)
+dim(pop_vote)
 CF_to_pop<-merge(CF_turnout3, pop_vote, by="Abbreviation")
 
 #CF_to_pop2<-factorsNumeric(CF_to_pop)
@@ -377,7 +395,10 @@ CF_to_pop <- CF_to_pop %>% mutate(CF = Dem.CF + Ind.CF + Rep.CF)
 
 ts_a<-mutate(ts, Abbreviation=V161010e)
 ts3<-merge(ts_a, CF_to_pop, by="Abbreviation")
-head(ts3)
+#head(ts3)
+
+CF_to_pop$Abbreviation<-as.character(CF_to_pop$Abbreviation)
+head(CF_to_pop)
 ```
 
 ```{r}
@@ -388,22 +409,30 @@ head(ts3)
 asNumeric <- function(x) as.numeric(as.character(gsub(',', '', x)))
 #asNumeric(CF_to_pop$VEP)
 factorsNumeric <- function(d) modifyList(d, lapply(d[, sapply(d, is.factor)], asNumeric))
-CF_to_pop<-factorsNumeric(CF_to_pop)
-CF_to_pop2<-select(CF_to_pop, -c("State", "Overseas", "VEP.Total.Ballots.Counted", "Total.Ballots.Counted", "Abbreviation", "Year", "Region", "Winner"))
-CF_to_pop3<-select(CF_to_pop, -c("State", "Overseas", "VEP.Total.Ballots.Counted", "Total.Ballots.Counted","Year"))
+CF_to_pop1<-factorsNumeric(CF_to_pop)
+CF_to_pop2<-select(CF_to_pop1, -c("State", "Overseas.Eligible", "VEP.Total.Ballots.Counted", "Total.Ballots.Counted", "Abbreviation", "Year", "Region", "Winner"))
+CF_to_pop3<-select(CF_to_pop1, -c("State", "Overseas.Eligible", "VEP.Total.Ballots.Counted", "Total.Ballots.Counted","Year"))
 
 cf_na<-sapply(CF_to_pop2, function(y) sum(length(which(is.na(y)))))
+
+dim(CF_to_pop)
+dim(CF_to_pop1)
 
 sapply(CF_to_pop2, is.numeric)
 
 library(FactoMineR)
-famd<-FAMD(CF_to_pop3)
-famd$eig
+famd<-FAMD(CF_to_pop3, ncp=50)
+length(famd$eig[,3])
+length(c(1:49))
+plot(c(1:49), famd$eig[,3])
 
-pca<-prcomp(CF_to_pop2, scale=T)
+famd_lasso<-gamlr(as.data.frame(famd$eig[,1]), CF_to_pop1$VEP.Highest.Office)
+
+pca<-prcomp(CF_to_pop2)
 z<-predict(pca)
-#pca_lasso<-gamlr(CF_to_pop$Winner, z)
-#coef(pca_lasso)
+
+pca_lasso<-gamlr(as.data.frame(z), CF_to_pop$Winner)
+coef(pca_lasso)
 
 ```
 
@@ -427,6 +456,7 @@ ts_nl<-select(ts, -c(list_cols, weights, strata_weights, interview_type))
 ts_f<-as_factor(ts_nl, only_labelled = T, levels="values")
 
 factor_ts<-Filter(is.factor, ts_f)
+numeric_ts<-Filter(is.numeric, ts_f)
 ```
 
 
@@ -443,20 +473,30 @@ props<-data.frame(Abbreviation=state_converter$Abbreviation)
 
 
 
-d<-as.data.frame.matrix(prop.table(table(f_state_ts$Abbreviation, f_state_ts[, "V161001"]), 1))
+#d<-as.data.frame.matrix(prop.table(table(f_state_ts$Abbreviation, f_state_ts[, "V161001"]), 1))
 
-d <- cbind(rownames(d), as.data.frame(d, row.names=NULL))
-colnames(d)[colnames(d)=="rownames(d)"]<-"Abbreviation"
-rownames(d)<-c()
+#d <- cbind(rownames(d), as.data.frame(d, row.names=NULL))
+#colnames(d)[colnames(d)=="rownames(d)"]<-"Abbreviation"
+#rownames(d)<-c()
 
 #head(d)
 
-m<-merge(props, d, by="Abbreviation")
-#head(m)
+#m<-merge(props, d, by="Abbreviation")
+
+ts_f2<-as_factor(ts_nl, only_labelled = T, levels="values")
+factor_ts2<-Filter(is.factor, ts_f2)
+
+na_count <-sapply(factor_ts2, function(y) sum(length(which((y%in%c(-7:-1))))))
+
+good_names<-names(na_count)[na_count==0]
+factor_ts3<-select(factor_ts2, c(good_names))
+f_state_ts2<-cbind(Abbreviation, factor_ts3)
+
+
 
 start_time<-Sys.time()
-for (col in names(factor_ts)){
-  pt<-prop.table(table(f_state_ts$Abbreviation, f_state_ts[, col]), 1)
+for (col in names(factor_ts3)){
+  pt<-prop.table(table(f_state_ts2$Abbreviation, f_state_ts2[, col]), 1)
   colnames(pt)<-paste(col, colnames(pt), sep="_")
   p<-as.data.frame.matrix(pt)
   p <- cbind(rownames(p), as.data.frame(p, row.names=NULL))
@@ -469,59 +509,90 @@ for (col in names(factor_ts)){
   
 props
 ```
+
+```{r}
+m<-aggregate(numeric_ts, list(Abbreviation), mean)
+colnames(m)[colnames(m)=="Group.1"]<-"Abbreviation"
+m2<-m[m$Abbreviation!="DC",]
+dim(new_ething)
+```
  
 ```{r}
 write.csv(props, file="./Data/Prop.csv")
 ```
 
 ```{r}
-prop2<-props[props$Abbreviation!="DC"]
-everything<-merge(CF_to_pop, prop2, by="Abbreviation")
+
+prop2<-props[props$Abbreviation!="DC", ]
+new_ething<-merge(prop2, m2, by="Abbreviation")
+everything<-merge(CF_to_pop, new_ething, by="Abbreviation")
 write.csv(everything, file="./Data/CF_to_res_ts.csv")
 ```
-  
+
+LASSO
 ```{r}
-}
-as.data.frame(prop.table(table(f_state_ts$Abbreviation, f_state_ts$V161005)))
+ething<-read.csv("./Data/CF_to_res_ts.csv")
+```
 
-freq_list<-f_state_ts%>%
-  group_by(Abbreviation)%>%
-  lapply(f_state_ts, FUN=table)%>%
-  lapply(f_state_ts, FUN=prop.table)
+```{r}
+d<-CF_to_pop$CF
+ething2<-as.big.matrix(select(ething, -c("CF", "Dem.CF", "Rep.CF", "Ind.CF")))
+treat_blasso<-biglasso(X=ething2, y=d)
+#plot(treat_blasso)
+#sort(coef(treat_blasso), decreasing = T)[1:10]
+big_dhat<-predict(treat_blasso, ething2)
+
+V<-CF_to_pop$VEP.Highest.Office
+
+#cbind(d, dhat, spm)
+
+D<-CF_to_pop$Dem.CF
+R<-CF_to_pop$Rep.CF
+I<-CF_to_pop$Ind.CF
+
+source("BM.R")
+
+bigd_lasso<-biglasso(cbindBM(as.big.matrix(d),as.big.matrix(as.matrix(big_dhat)),ething2, binding="left"), V)
+coef(bigd_lasso)
+plot(bigd_lasso)
+```
+
+```{r}
+dim(ething)
+spm <-model.matrix(~., data=ething)[,-1]#[, c("V161241", "V161342", "salt")])[,-1]
+
+#spm2<-spm[,!(state=="DC") ]
+#spm2
 
 
+#dim(tsg2)
+#dim(spm)
+#length(CF_to_pop$CF)
 
+treat_lasso<-gamlr(spm, d)
 
-head(freq_list)
-prop_df<-mapply(prop.table, freq_list)
-head(prop_df)
+dhat<-predict(treat_lasso, )
 
-f_state_ts%>%
-  group_by(Abbreviation)%>%
-  summarise(c=count(Abbreviation)$freq)
+V<-CF_to_pop$VEP.Highest.Office
 
-head(f_state_ts)
+#cbind(d, dhat, spm)
+
+D<-CF_to_pop$Dem.CF
+R<-CF_to_pop$Rep.CF
+I<-CF_to_pop$Ind.CF
+
+d_lasso<-gamlr(cbind(d,dhat,ething2), V, free=2)
+coef(d_lasso)
+dlasso_plot<-plot(d_lasso)
+```
   
-
-dim(count(factor_ts, names(factor_ts)))
-
-#head(f_state_ts)
-
-length(ts$V161010e)
-dim(factor_ts)
-
-typeof(ts$V161010e)
-
-tab<-table(f_state_ts)
-props<-prop.table(tab)
-
-props
+Old LASSO stuff, might use it later
+```{r}
 
 #use this to get rid of version column if needed
 
 #set up columns to exclude
 
-#compl_status<-c("")
 
 
 na_count <-sapply(ts_nl, function(y) sum(length(which(y<0))))
@@ -532,6 +603,8 @@ na_count <-sapply(ts_nl, function(y) sum(length(which(y<0))))
 good_names<-names(na_count)[na_count/nrow(ts_nl)<0.1]
 
 very_good_names<-names(na_count)[na_count/nrow(ts_nl)==0]
+
+length(very_good_names)
 
 
 lasso_cols<-c("V161241", "V161342", "V161310a")
@@ -563,31 +636,7 @@ tsg
 
 #tsg <- mutate(ts, perrel = group_by(V161010e, count(V161241=1)))
 
-spm <- sparse.model.matrix(~., data=tsg)[,-1]#[, c("V161241", "V161342", "salt")])[,-1]
 
-#spm2<-spm[,!(state=="DC") ]
-#spm2
-
-d<-CF_to_pop$CF
-#dim(tsg2)
-#dim(spm)
-#length(CF_to_pop$CF)
-
-treat_lasso<-gamlr(spm, d)
-
-dhat<-predict(treat_lasso, spm)
-
-V<-CF_to_pop$VEP.Highest.Office
-
-#cbind(d, dhat, spm)
-
-D<-CF_to_pop$Dem.CF
-R<-CF_to_pop$Rep.CF
-I<-CF_to_pop$Ind.CF
-
-d_lasso<-gamlr(cbind(d,dhat,spm), V, free=2)
-coef(d_lasso)
-dlasso_plot<-plot(d_lasso)
 ```
 
 
@@ -607,4 +656,29 @@ tree_ex<-tree(as.numeric(VEP.Highest.Office)~Dem.CF+Rep.CF+Ind.CF, data=CF_turno
 plot(tree_ex)
 text(tree_ex)
 
+```
+
+```{r}
+ething$Abbreviation[which.max(ething$VEP.Highest.Office)]
+```
+
+PLOTS
+```{r}
+jpeg("./Plots/VEP_hist.jpeg")
+hist(ething$VEP.Highest.Office, xlab = "Voter Turnout", main = "Turnout Distribution, 2016")
+dev.off()
+
+jpeg("./Plots/Dem_spending.jpeg")
+hist(ething$Dem.CF/ething$CF*100, main="Percent of All Spending, Democrats", xlab = "Democrat Percentage")
+dev.off()
+jpeg("./Plots/Rep_spending.jpeg")
+hist(ething$Rep.CF/ething$CF*100, main="Percent of All Spending, Republican", xlab = "Republican Percentage")
+dev.off()
+jpeg("./Plots/Ind_spending.jpeg")
+hist(ething$Ind.CF/ething$CF*100, main="Percent of All Spending, Independents", xlab = "Independent Percentage")
+dev.off()
+
+jpeg("./Plots/spendingvsto")
+plot(ething$VEP.Highest.Office, ething$CF, xlab = "Turnout", ylab = "Total Spending", main="Spending vs Turnout")
+dev.off()
 ```
