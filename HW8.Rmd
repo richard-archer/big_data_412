@@ -56,6 +56,9 @@ upto2k14<-read.csv("./Data/1980-2014 November General Election - Turnout Rates.c
 to2k16<-read.csv("./Data/2016 November General Election - Turnout Rates.csv", skip=1, header=T)
 to2k18<-read.csv("./Data/2018 November General Election - Turnout Rates.csv", skip=1, header=T)
 
+#Overall comment: lots of weird columns names and stuff like that 
+#which caused alot of annoyance and time wasting
+
 #read in state as x for some reason
 colnames(upto2k14)[colnames(upto2k14)=="X"]<-"State"
 
@@ -69,18 +72,23 @@ colnames(to2k18)[colnames(to2k18)=="State.Abv"]<-"Abbreviation"
 colnames(to2k16)[colnames(to2k16)=="Total.Ballots.Counted..Estimate."]<-"Total.Ballots.Counted"
 colnames(to2k18)[colnames(to2k18)=="Total.Ballots.Counted..Estimate."]<-"Total.Ballots.Counted"
 
-#add year variables
+#add year variables, makes full column with year in each cell
 to2k16$Year<-2016
 to2k18$Year<-2018
 
 #get rid of united states rows
+
+#data originally had an overall row for the entire US, but 
+#we are being more granular so keeping this would mess with everything
 upto2k14<-upto2k14[upto2k14$State != "United States",]
 to2k16<-to2k16[to2k16$State !=  "United States",]
 to2k18<-to2k18[to2k18$State != "United States",]
 
+#weird columns that we dont care about
 bad_2k14<-c("ICPSR.State.Code", "Alphanumeric.State.Code")
 bad_other<-c("State.Results.Website", "Status")
 
+#takes only the columns whose names are not in the above lists
 upto2k14<-upto2k14[,!(names(upto2k14)%in% bad_2k14)]
 to2k16<-to2k16[,!(names(to2k16)%in% bad_other)]
 to2k18<-to2k18[,!(names(to2k18)%in% bad_other)]
@@ -90,6 +98,9 @@ head(to2k16)
 
 
 #dataframes of regions from aes data, done manually
+
+#we dont need this now, but initially we thought we could only get 
+#to the regional level because pre 2014 data is only granular to regions, and we started using the 2016 data later. This caused some time wasting as we still cleaned up all the pre 2014 data etc
 NE<-data.frame(Abbreviation=c("CT", "ME", "MA", "NH", "NJ", "NY", "PA", "RI", "VT"))
 NC<-data.frame(Abbreviation=c("IL", "IN", "IA", "KS", "MI", "MN", "MO", "NE", "ND"
 , "OH", "SD", "WI"))
@@ -103,37 +114,28 @@ South$Region<-"South"
 West$Region<-"West"
 
 #combine the regions with region labels
+#combines all the states into one big boi of state abbreviation and the region that state is in
 reg_converter<-rbind(NE, NC, South, West)
 
 #contains state names and abbreviations
+#I figured out how to do this myself and apparently there is an r package to do it for you so kms
+#just a dataframe with state names and corresponding abbreviations. We arbitrarily chose to merge things on abbreviation, so we need every dataframe to have an abbreviation column even if the df intiially only has state name
 state_converter1<-read.csv("./Data/State_converter.txt")
 
 #add DC converter
+#do this so we dont lose the information, even if we exclude it later
 dc_converter<-data.frame(State="District of Columbia", Abbreviation="D.C.")
+#add DC just like we added all the states together, like adding a new state
 state_converter<-rbind(state_converter1, dc_converter)
 
 #add abbreviations to pre 2014 turnout data
+#merging by state keeps the abbreviations in the right row places so we can merge on abbreviations going forward
 turnout2<-merge(upto2k14, state_converter, by="State")
 
-
-#col_comp<-Map(names(turnout2), names(to2k16), 
-              #names(to2k18))
-
-#to2k16$Total.Ballots.Counted<-
-
-col_df<-data.frame(X=colnames(turnout2), Y=colnames(to2k16))
-
-col_df
-
-
-
+#want same columns
 turnout2<-select(turnout2, colnames(to2k16))
-#all turnout df
 
-colnames(turnout2)
-colnames(to2k16)
-colnames(to2k18)
-#excluding 2018 for now
+#excluding 2018 for now, but combining pre2014 with 2016
 turnout<-rbind(turnout2, to2k16)#, to2k18)
 
 #add regions to turnout data
@@ -143,6 +145,9 @@ head(turnout_reg)
 ```
 
 ```{r}
+#This was me fucking around, could maybe make some plots or whatever with the turnout stuff
+
+
 #V161011 <- registered to vote
 #V161010e <- state abr
 #V161019 <- registered party
@@ -156,6 +161,7 @@ dim(subset(ts, V161010e=="CA"))
 ```
 
 ```{r}
+#also me fucking around, because the survey data is "haven_labelled" which means it has both the numeric code and the string that corresponds to the code saved together. Its super annoying to work with and while I dont do anythign with it right now I later change all of the haven_labelled columns to factors I think
 
 names(ts)[sapply(ts,class)=="double"]
 
@@ -167,6 +173,7 @@ ts$V161001
 ```
 
 ```{r}
+#There are alot of missing values, but some are good missing and some are bad missing. -7 to -1 correspond to some sort of error (-1 is inapplicable, ie it was a follow up question of some type. Not really sure how to interpret that/combine the columns even now. There might be a way to combine the columns, eg if the first question is do you approve and the second is how strongly do you feel of your last answer, then combine into one scale of strongly dissaprove to strongly approve. However, this would take alot of manual work considering how many columns there are and the codebook is 2000 pages), and it makes sense to include these as there isnt necessarily a real response that is missing. -8 and -9 correspond to "don't know" or "refused to respond", which suggests that there might be a legitimate answer if the person was more knowledgeable or less of a dick about responding. We can try using mean imputation for this, but that reduces variance which can lead to issues with things like hypothesis testing. We can also try imputing with KNN, where we use the other column values to classify the column value we want. However, KNN was very computationally expensive when I tried it before on the whole dataset (left it run for >30 minutes and it didnt work). Richard is working on this, so he can probably add to this description. I think we should get rid of all columns that have any bad missing values, which leaves 300>#col>200, and then try to KNN impute the rest. Cutting out rows with bad missing values is another possibilitiy, but it seems like a bad idea as we already have a very small sample size compared to the number of columns we are considering.
 
 #-7 to -1 correspond to NaN, will use these as references
 #-8, -9, 998, 999 will be imputed with KNN
@@ -195,27 +202,27 @@ na_count2/nrow(ts)
 
 ```{r}
 #campaign finance stuff
+#this has aggregated CF data while Grace had more granular data that would be harder to aggregate. Both are from the FEC I think?
 cf15_16<-read.csv("./Data/CF/Contributions_15-16.csv")
 head(cf15_16)
 ```
 
 ```{r}
+#select the relevant columns
 cf_cols<-c("committee_name", "report_year", "entity_type", "recipient_name", "recipient_state", "disbursement_description", "disbursement_date", "disbursement_amount", "fec_election_type_desc", "fec_election_year")
 
+#there are so many candidates, like a couple hundred who made any sort of filing. Filing can be as small as a 5 dollar uber or something like that
 cf15_16<-cf15_16[, cf_cols]
 unique(cf15_16$committee_name)
 
 
-
-p<-c("OBAMA FOR AMERICA"=="D")
-
-#cf15_16$party<-apply(cf15_16$committee_name, 2, function(x) {x <- revalue(x, p); x})
-
 head(cf15_16)
 
+#add up all the spendings by each committee
 com_agg<-aggregate(cf15_16$disbursement_amount, by=list(Comittee=cf15_16$committee_name), sum)
 
 
+#arbitrarily only looking at candidates who spent more than $1000000. We could change this number, but it cut the number of candidates from over 200 to ~80. The highest spending candidates were orders of magnitude larger than the lowest spending candidates even with these cuts, so I dont think its too aggressive of a cut. I havent even heard of alot of the people on these lists. Could maybe experiment with changing this number, but I think this is a good balance between cutting out how a bunch of small candidates could affect this vs only considering the serious candidates who voters actually care about
 colnames(com_agg)[colnames(com_agg)=="x"]<-"Spending"
 cut_df<-as.data.frame(com_agg)[com_agg$Spending>1000000,]
 
@@ -226,12 +233,14 @@ cut_df<-as.data.frame(com_agg)[com_agg$Spending>1000000,]
 cut_df$Comittee
 
 #removes rows with NaN in specific column
+#stole this from Stack Exchange obviously
 completeFun <- function(data, desiredCols) {
   completeVec <- complete.cases(data[, desiredCols])
   return(data[completeVec, ])
 }
 
 #important candidate comittees, based on party
+#had to go and google the name of some of these people, manually put them into lists based on which party they were in
 dems<-data.frame(cands=c("OBAMA FOR AMERICA", "HILLARY FOR AMERICA", "BERNIE 2016", "COMMITTEE TO ELECT LLOYD KELSO PRESIDENT", "ROCKY 2016 LLC", "O'MALLEY FOR PRESIDENT", "WILLIE WILSON 2016"))
 
 reps<-data.frame(cands=c("CRUZ FOR PRESIDENT", "CARLY FOR PRESIDENT", "CARSON AMERICA", "DONALD J. TRUMP FOR PRESIDENT, INC.", "JEB 2016, INC.", "MARCO RUBIO FOR PRESIDENT", "CHRIS CHRISTIE FOR PRESIDENT INC", "PERRY FOR PRESIDENT INC", "SANTORUM FOR PRESIDENT 2016", "LINDSEY GRAHAM 2016", "RAND PAUL FOR PRESIDENT, INC.", "HUCKABEE FOR PRESIDENT, INC.", "SCOTT WALKER INC", "KASICH FOR AMERICA INC", "FRIENDS OF HERMAN CAIN INC"))
@@ -244,9 +253,11 @@ cf15_16$party[cf15_16$committee_name %in% reps$cands]<-"R"
 cf15_16$party[cf15_16$committee_name %in% ind$cands]<-"I"
 
 #remove NaN from parties (ie remove not important candidates)
+#gets rid of rows that have NaN in "party" column, ie if the candidate wasnt in the lists made above
 cf15_16<-completeFun(cf15_16, "party")
 
 #aggregate based on party and state
+#get total spending in each state by each party
 com_agg2<-aggregate(disbursement_amount~party+recipient_state, cf15_16, sum)
 #change state colname for matching purposes
 colnames(com_agg2)[colnames(com_agg2)=="recipient_state"]<-"Abbreviation"
@@ -254,12 +265,14 @@ colnames(com_agg2)[colnames(com_agg2)=="recipient_state"]<-"Abbreviation"
 
 ```{r}
 #just 2016 turnout info
+#we simply dont have enough time to consider elections besides 2016, so alot of the turnout stuff from above is kinda useless but I did it first and it feels great to have wasted time on that
 turnout_16<-subset(turnout_reg, Year==2016)
 
 #disbursements by state
 dem_CF<-subset(com_agg2, party=="D", select=c("disbursement_amount", "Abbreviation"))
 rep_CF<-subset(com_agg2, party=="R", select=c("disbursement_amount", "Abbreviation"))
 ind_CF1<-subset(com_agg2, party=="I", select=c("disbursement_amount", "Abbreviation"))
+#independents didnt spend any money in Arkansas, so had to manually enter the value. This was a fucking pain to figure out, as the later merge functions were returning 49 rows instead of 50 for like a long time like kms
 AR_df<-data.frame(disbursement_amount=0, Abbreviation="AR")
 ind_CF<-rbind(ind_CF1, AR_df)
 ```
@@ -269,6 +282,8 @@ ind_CF<-rbind(ind_CF1, AR_df)
 
 #merge each parties spending by state, and renaming each column appropriately after
 #theres probably a better way to do this but whatever
+#This was also annoying to figure out, as I spent a long time trying merge all of the differetn CFs at once but im not sure its possible with how the column naming works. Column names are the worst thing ever but super necessary for literally anything to work
+#basically all this is doing is adding 3 new columns, one for each party, where each row is the amount spent by the party in the state
 CF_turnout1<-merge(turnout_16, dem_CF, by="Abbreviation")
 colnames(CF_turnout1)[colnames(CF_turnout1)=="disbursement_amount"]<-"Dem.CF"
 CF_turnout2<-merge(CF_turnout1, rep_CF, by="Abbreviation")
@@ -276,7 +291,7 @@ colnames(CF_turnout2)[colnames(CF_turnout2)=="disbursement_amount"]<-"Rep.CF"
 CF_turnout3<-merge(CF_turnout2, ind_CF, by="Abbreviation")
 colnames(CF_turnout3)[colnames(CF_turnout3)=="disbursement_amount"]<-"Ind.CF"
 
-CF_turnout3$Ind.CF[CF_turnout3$Abbreviation=="AR" ]<-0
+#CF_turnout3$Ind.CF[CF_turnout3$Abbreviation=="AR" ]<-0
 
 #CF_turnout3[CF_turnout3$Abbreviation=="AR",]
 
@@ -291,6 +306,7 @@ CF_turnout3$Ind.CF[CF_turnout3$Abbreviation=="AR" ]<-0
 ```
 
 ```{r}
+#me fucking around with pca, more time spent that didnt lead to anything
 rel<-aggregate(ts[,!(names(ts) %in% c("V161010e", "version"))], by=list(Rel=ts$V161241), mean)
 
 #rel$V162084
@@ -320,6 +336,7 @@ pca<-prcomp(new_rel, scale=T)
 ```{r}
 #ONLY RUN THIS ONCE OR THE PERCENTS JUST GET SMALLER AND SMALLER,
 #or change the code somehow
+#this takes columns that were "factors" that had percentages in them and converts them to numeric decimals. This was also super annoying to figure out, and is partially stolen from stack exchange. Also was annoying that if you run it more than once the rows get smaller and smaller instead of realizing this, but im just bad at coding
 
 
 #columns that have percents in them
@@ -333,34 +350,47 @@ CF_turnout3
 ```{r}
 #election results by state
 results<-read_excel("./Data/G-politicians.xls")
+#found a neat little function called clean_names from the janitor package that takes white space in column names and converts it to an underscore, as well as standardizing the capitalization of the column names. This worked super well for me, but it gave Grace alot of trouble which wasted alot of time on somethign kinda silly
 results<-clean_names(results)
 
 dim(results)
 
 #change abb col for matching purposes
+#again, having to change column names is fucking annoying and a waste of my time
 colnames(results)[colnames(results)=="state_abbreviation"]<-"Abbreviation"
 
 #fix some weird data so its all D/R
+#this was also really annoying to figure out, took alot of manually scrolling through data until I found parties that werent exactly D/R. Also fuck new york for calling the Democratic party "Working families, womens equality, democratic" like lmao nice guys
 results$balloted_party_ies[(results$balloted_party_ies=="Republican, American Independent")|(results$balloted_party_ies=="Conservative, Republican")]<-"Republican"
 results$balloted_party_ies[(results$balloted_party_ies=="Democratic-Nonpartisan League")|(results$balloted_party_ies=="Democratic-Farmer Labor")|(results$balloted_party_ies=="Working Families, Women's Equality, Democratic")]<-"Democratic"
 
 #only take presidential candidates who are D/R
+#we are gonna use this info to make a margin of victory in a plurality sense. Since the Inds never even get close to winning, ignoring them from who won the state is fine, and we can consider the voting as a plurality so first and second are all that matter
 results<-subset(results, (office_abbreviation=="P")&( (balloted_party_ies=="Republican")|(balloted_party_ies=="Democratic")))
 ```
 
 ```{r}
 #df with state and margin 
+#start with undefined margins, change them with a for loop
 pop_vote<-data.frame(Abbreviation=state_converter1$Abbreviation, margin=NaN)
 
 #for each state, get the votes for each party, subtract them to get difference, add it to the df pop_vote
+#tried to vectorize this, spent way too much time failing before finally giving up and brute forcing it. I wish I wasnt bad at coding
+
+#for each state
 for (state in state_converter1$Abbreviation){
+  #number of votes for dem
   dem<-subset(results, (Abbreviation==state)&(balloted_party_ies=="Democratic"), select=popular_vote)
+  #number of votes for rep
   rep<-subset(results, (Abbreviation==state)&(balloted_party_ies=="Republican"), select=popular_vote)
+  #difference between the two
   m<-dem$popular_vote-rep$popular_vote
+  #add the difference to the margin column, where positive means dems won
   pop_vote$margin[pop_vote$Abbreviation==state]<-m
 }
 
 #add who won the popular vote
+#with how we did the for loop, positive margin means dems, negative means reps 
 pop_vote$Winner[pop_vote$margin>0]<-"D"
 pop_vote$Winner[pop_vote$margin<0]<-"R"
 
@@ -370,56 +400,57 @@ head(pop_vote)
 ```{r}
 #merge vote margin and winner with turnout/CF df
 
-#ISSUE: converting the total votes column (read in as a factor) into a numeric so we can get a percentage (to account for difference in voting populations of each state)
-
-#as.numeric.factor <- function(x) {as.numeric(levels(x))[x]}
-
-#asNumeric <- function(x) as.numeric(as.character(x))
-#factorsNumeric <- function(d) modifyList(d, lapply(d[, sapply(d, is.factor)],   
-#                                                   asNumeric))
-
-
-dim(CF_turnout3)
-dim(pop_vote)
 CF_to_pop<-merge(CF_turnout3, pop_vote, by="Abbreviation")
 
-#CF_to_pop2<-factorsNumeric(CF_to_pop)
-#CF_to_pop2
+
+
+#THIS LINE OF CODE WAS THE FUCKING DEATH OF ME I WANT TO MURDER FUCKING GSUB ITS FAKE AS FUCK
+#this just converts a factor column into numeric, which makes sense as its number of votes or something like that. Need to replace the commas with nothing in order for it to work for whatever reason? I spent straight up like 8 hours on this one line
 CF_to_pop$Highest.Office<-as.numeric(as.character(gsub( ',', '', CF_to_pop$Highest.Office)))
-#CF_to_pop$Highest.Office<-as.numeric(levels(f))[f]
-#CF_to_pop
-#as.numeric.factor(CF_to_pop$Highest.Office)
+
+#make a margin decimal, which makes more sense as it accounts for size of the state
 CF_to_pop$margin_dec<-CF_to_pop$margin/(CF_to_pop$Highest.Office)
 
+#add all the spendings together into one total spending per state
 CF_to_pop <- CF_to_pop %>% mutate(CF = Dem.CF + Ind.CF + Rep.CF)
 
+#dont really need this, just for synchronizing with Grace I think
 ts_a<-mutate(ts, Abbreviation=V161010e)
 ts3<-merge(ts_a, CF_to_pop, by="Abbreviation")
 #head(ts3)
 
+#need to do this so later functions dont make the abbreviations a Nan value. This also took forever to figure out, as we need the abbreviations to combine and aggregate things so nan is really really bad for abbreviations especially, cant just ignore this problem. It was considering abbreviation as a factor instead of a character
 CF_to_pop$Abbreviation<-as.character(CF_to_pop$Abbreviation)
 head(CF_to_pop)
 ```
 
 ```{r}
-#function(x){
-#  CF_to_pop[,x]<-as.numeric(as.character(gsub( ',', '', #CF_to_pop[,x])))
-#}
 
+#thanks for being amazing stack exchange
+#this is the function version of what I did before to turn a factor column into numeric where the values have commas and are clearly normal numbers, but it does it for all factor columns in a dataframe
 asNumeric <- function(x) as.numeric(as.character(gsub(',', '', x)))
 #asNumeric(CF_to_pop$VEP)
 factorsNumeric <- function(d) modifyList(d, lapply(d[, sapply(d, is.factor)], asNumeric))
+#applying the above function yay
 CF_to_pop1<-factorsNumeric(CF_to_pop)
+
+#these were to test removing certain columns to make PCA work
 CF_to_pop2<-select(CF_to_pop1, -c("State", "Overseas.Eligible", "VEP.Total.Ballots.Counted", "Total.Ballots.Counted", "Abbreviation", "Year", "Region", "Winner"))
 CF_to_pop3<-select(CF_to_pop1, -c("State", "Overseas.Eligible", "VEP.Total.Ballots.Counted", "Total.Ballots.Counted","Year"))
 
+#checking out Nan values in dfs, as PCA doesnt work with any Nan values
 cf_na<-sapply(CF_to_pop2, function(y) sum(length(which(is.na(y)))))
 
 dim(CF_to_pop)
 dim(CF_to_pop1)
 
+#PCA only works with numeric columns, so checking if the columns are numeric, ones that arent can be added to above lists for further testing
 sapply(CF_to_pop2, is.numeric)
 
+#thicc explanation time yung Riya
+#https://stats.stackexchange.com/questions/5774/can-principal-component-analysis-be-applied-to-datasets-containing-a-mix-of-cont
+#So PCA doesnt work well with categorical data. We have some categorical data, so obviously a problem. There is a thing called MCA (Multiple Correspondence Analysis) which is like PCA but for categorical variables. FAMD (Factor Analysis for Mixed Data) combines MCA and PCA so yay! But I dont really understand the output, I could use help here, but I do thing the famd$eig is similar to PCA stuff where it shows the percent of variance per cmpt and stuff like that. Couldnt get a lasso on the components to work, could use more help with that 
+#https://cran.r-project.org/web/packages/FactoMineR/FactoMineR.pdf
 library(FactoMineR)
 famd<-FAMD(CF_to_pop3, ncp=50)
 length(famd$eig[,3])
@@ -444,6 +475,7 @@ coef(pca_lasso)
 #V168023 <- income
 #V168110 <- est age
 
+#some columns arent real questions or stuff like that. We should use weights to account for underrepresented responses based on things like type of interview and stuff like that, and those weights are given to us, but havent incorporated it and might not at this point
 list_cols<-c("version", "V160001", "V160001_orig")
 weights<-c("V160102", "V160101", "V160102f", "V160101f", "V160102w", "V160101w")
 strata_weights<-c("V160201", "V160201f", "V160201w", "V160202", "V160202f", "V160202w")
@@ -453,8 +485,10 @@ ts_nl<-select(ts, -c(list_cols, weights, strata_weights, interview_type))
 
 
 #takes a bit to run
+#turns all the haven_labelled columns into factors
 ts_f<-as_factor(ts_nl, only_labelled = T, levels="values")
 
+#only factor and only numeric dfs, will treat them differently
 factor_ts<-Filter(is.factor, ts_f)
 numeric_ts<-Filter(is.numeric, ts_f)
 ```
@@ -463,7 +497,7 @@ numeric_ts<-Filter(is.numeric, ts_f)
 ```{r}
 Abbreviation<-ts$V161010e
 
-
+#abbreviation shouldnt be a factor rn, so add it as a column so everything stays in order
 f_state_ts<-cbind(Abbreviation, factor_ts)
 
 
@@ -486,22 +520,30 @@ props<-data.frame(Abbreviation=state_converter$Abbreviation)
 ts_f2<-as_factor(ts_nl, only_labelled = T, levels="values")
 factor_ts2<-Filter(is.factor, ts_f2)
 
+#get names of columns that have any bad missing values
 na_count <-sapply(factor_ts2, function(y) sum(length(which((y%in%c(-7:-1))))))
 
+#only include the columns that have no bad missing values
 good_names<-names(na_count)[na_count==0]
 factor_ts3<-select(factor_ts2, c(good_names))
 f_state_ts2<-cbind(Abbreviation, factor_ts3)
 
 
-
+#timing the loop because it took a while the first time
 start_time<-Sys.time()
+#for each column
 for (col in names(factor_ts3)){
+  #make a proportion table of row percentages (each state is one row). So we get percent of each factor in a given column
   pt<-prop.table(table(f_state_ts2$Abbreviation, f_state_ts2[, col]), 1)
+  #attach the original column names to the factor values, make these into the column names
   colnames(pt)<-paste(col, colnames(pt), sep="_")
+  #turn it into a dataframe
   p<-as.data.frame.matrix(pt)
   p <- cbind(rownames(p), as.data.frame(p, row.names=NULL))
+  #some weird things with the abbrevaition as a column name, also took forever to figure out, dont totally understand it
   colnames(p)[colnames(p)=="rownames(p)"]<-"Abbreviation"
   rownames(p)<-c()
+  #merge with either the empty df with just abb in it or the df made from past loops. End up with 50 rows (states) with a column for each factor in each column with the percentage of the column that is that factor
   props<-merge(props, p, by="Abbreviation")
   stop_time<-Sys.time()
   print(stop_time-start_time)
@@ -511,6 +553,7 @@ props
 ```
 
 ```{r}
+#for numeric columns, we dont care about proportions as much as the mean, so just use aggregate
 m<-aggregate(numeric_ts, list(Abbreviation), mean)
 colnames(m)[colnames(m)=="Group.1"]<-"Abbreviation"
 m2<-m[m$Abbreviation!="DC",]
@@ -522,7 +565,8 @@ write.csv(props, file="./Data/Prop.csv")
 ```
 
 ```{r}
-
+#combine all of the loopy stuff
+head(CF_to_pop)
 prop2<-props[props$Abbreviation!="DC", ]
 new_ething<-merge(prop2, m2, by="Abbreviation")
 everything<-merge(CF_to_pop, new_ething, by="Abbreviation")
@@ -535,6 +579,10 @@ ething<-read.csv("./Data/CF_to_res_ts.csv")
 ```
 
 ```{r}
+#double lasso fucking kms
+#our original data (without excluding the bad missing values) was too big for sparse.model.matrix to handle, so I found a package called bigmemory that turns matrices into "big matrices" which are more memory efficient. Instead of gamlr, we use a package called biglasso which takes in big.matrix instead of sparse.model.matrix. This was so fucking annoying and also kinda a waste of time I think
+
+#total spending is treatment, cant think of a way to do treatment on each individual party
 d<-CF_to_pop$CF
 ething2<-as.big.matrix(select(ething, -c("CF", "Dem.CF", "Rep.CF", "Ind.CF")))
 treat_blasso<-biglasso(X=ething2, y=d)
@@ -542,6 +590,7 @@ treat_blasso<-biglasso(X=ething2, y=d)
 #sort(coef(treat_blasso), decreasing = T)[1:10]
 big_dhat<-predict(treat_blasso, ething2)
 
+#spending causing turnout seems plausible
 V<-CF_to_pop$VEP.Highest.Office
 
 #cbind(d, dhat, spm)
@@ -552,19 +601,24 @@ I<-CF_to_pop$Ind.CF
 
 source("BM.R")
 
+
+#cbind isnt a thing for big.matrix, so struggling to make this work
 bigd_lasso<-biglasso(cbindBM(as.big.matrix(d),as.big.matrix(as.matrix(big_dhat)),ething2, binding="left"), V)
 coef(bigd_lasso)
 plot(bigd_lasso)
 ```
 
 ```{r}
-dim(ething)
-spm <-model.matrix(~., data=ething)[,-1]#[, c("V161241", "V161342", "salt")])[,-1]
+#with fewer variables, we can try normal double lasso, but the spm isnt working for some reason. Getting errors that dont come up on stack exchange idk what to do beyond that
+ething2<-select(factorsNumeric(everything), -c("State", "Overseas.Eligible"))
+spm <-sparse.model.matrix(~.-CF-Ind.CF-Dem.CF-Rep.CF, data=ething2)[,-1]#[, c("V161241", "V161342", "salt")])[,-1]
 
 #spm2<-spm[,!(state=="DC") ]
 #spm2
 
-
+d<-ething$CF
+length(d)
+dim(spm)
 #dim(tsg2)
 #dim(spm)
 #length(CF_to_pop$CF)
