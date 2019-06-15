@@ -6,8 +6,6 @@ output: html_document
 ---
 
 #Reading, Cleaning Data
-
-ugh clean up the shitlist of packages we shouldn't be using this many
 ```{r setup, include=FALSE}
 
 setwd("E:/3rd/Spring/Big Data/project")
@@ -31,7 +29,7 @@ havingIP <- function() {
     "((25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)[.]){3}(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)"
   any(grep(validIP, ipmessage))
 }
-havingIP()
+havingIP() #fuck my laptop
 
 library(knitr)
 library(dplyr)
@@ -53,8 +51,6 @@ library(textir)
 #read in survey data
 ts <- read_dta("timeseries_2016_dta.zip")
 
-filing <- read.delim("ftf-all-filings.tsv", sep = "\t")
-
 #read in the turnout data
 upto2k14<-read.csv("1980-2014_nge_turnout.csv", skip=1, header=T)
 to2k16<-read.csv("2016_nge_turnout.csv", skip=1, header=T)
@@ -66,7 +62,7 @@ bad_other<-c("State.Results.Website", "Status")
 ```
 
 
-```{r combine turnout add regions}
+```{r combine turnout and regions}
 #Combine all the turnout info and add regions
 
 #upto2k14 column names
@@ -234,17 +230,14 @@ com_agg2<-aggregate(disbursement_amount~party+recipient_state, cf15_16, sum)
 colnames(com_agg2)[colnames(com_agg2)=="recipient_state"]<-"Abbreviation"
 ```
 
-
-```{r}
+```{r combine 2016 turnout and finance data}
 #just 2016 turnout info
 turnout_16<-subset(turnout_reg, Year==2016)
 #disbursements by state
 dem_CF<-subset(com_agg2, party=="D", select=c("disbursement_amount", "Abbreviation"))
 rep_CF<-subset(com_agg2, party=="R", select=c("disbursement_amount", "Abbreviation"))
 ind_CF<-subset(com_agg2, party=="I", select=c("disbursement_amount", "Abbreviation"))
-```
 
-```{r}
 #Add CF to turnout df by merging each parties spending by state 
 #Method 2
 com_agg3 <-
@@ -255,7 +248,7 @@ turnout_cf <-
 ```
 Ok so a question here: why does our com_agg3 (from com_agg) have abbreviations that aren't real? ZZ is not a state, and I suck at geography but we don't have 75 states. OMG ZZ IS THE *DEEP* STATE??!!
 
-```{r adding in results}
+```{r adding in campaign results}
 #election results by state
 results<-read_excel("G-politicians.xls")
 #clean_names(results)
@@ -296,41 +289,103 @@ CF_pop <-
          margin_per = margin/vote_per,
          cf = D + I + R)
 #alright at this point, cf_pop has party spending, total spending, and who won
+list_cols<-c("version", "V160001", "V160001_orig")
+weights<-c("V160102", "V160101", "V160102f", "V160101f", "V160102w", "V160101w")
+strata_weights<-c("V160201", "V160201f", "V160201w", "V160202", "V160202f", "V160202w")
+interview_type<-c("V160501", "V160502")
 
-ts1 <- mutate(ts, Abbreviation = V161010e)
+ts1 <- mutate(ts, Abbreviation = V161010e) %>%
+  select(-c(list_cols, weights, strata_weights, interview_type))
 
+
+#drop all the missing values @riya help
 #ts + campaign finance, total spending, results by state
-ts3 <- merge(ts1, CF_pop, by = "Abbreviation")
-
-#aight ts3 is our master dataframe
+ts3 <- 
+  merge(ts1, CF_pop, by = "Abbreviation")
 ```
 
+
+```{r}
+#Exploratory stuff: make a graph of spending over time
+
+
+```
+
+#Resolve Missing Data: Grace is working on this
+```{r}
+#Drop every NA value (-1 through -7) - the dumbass way
+ts_n <- 
+  ts3 %>% 
+#keep -8 and -9 bc those are meaningful 
+  
+  
+#reassign -8 and -9 to -1
+
+```
 
 
 #Campaign Finance Take 2
-```{r}
-#need to resolve missing values in contribution amount 
-filing1 <- 
-  filing %>%
-  select(-c(url,thumbnail_url))
-# nb: id is the only column that has no missing or NA values
-# id: literally every row is different 
-# 
+```{r campaign finance data individualized}
+#propublica individualized funding
+pro_filing <- 
+  read.delim("ftf-all-filings.tsv", sep = "\t") %>%
+  select(-c(url,thumbnail_url, dc_slug)) %>%
+  mutate(year = as.Date(upload_date, "%Y"))  %>%
+  filter (year < "2012-11-06",
+         !is.na(gross_amount))
+#we go from 66k to 16k cases by this point - dropping 50k cases ain't great
+#our cycle cutoff is November 6, 2012 because that's election day for 2012
+#in hindsight this is useless because it's 2012. fuck me.
+ 
 
-```
+#FEC individualized campaign finance data
+#this is too large to view or download 
 
+#method 1: nope. 
+# FILES <- list.files( pattern = ".txt")
+# for (i in 1:length(FILES)) {
+# FILE=read.table(file=FILES[i],header=T)
+# write.csv(FILE,file=paste0("/home/dennis/Desktop/",sub(".txt","",FILES[i]),".csv"))
+# }
 
-```{r}
+# method 2: why did I even think that would work
+# filing <- read.table("itcont.txt", sep ="|")
 
+#method 3: readr is a speedy boi 
+install.packages("readr")
+library(readr)
 
-#literally find the percentages of columns
-andy <- 
-  ts3 %>% 
+#what's the diff between delim and tsv
+filing <- read_tsv("itcont.txt")
+separate(filing, col, into, sep = "|", remove = TRUE, convert = FALSE) #this doesn't work.
+
+#Clinton announced in April 12, 2015
+#Trump announced June 16, 2015
+#Election day is November 8, 2016
   
 
+#committee to candidate conversion, because filing only has committees
+c2c <- 
+  read.csv("com_to_cand.csv")%>%
+  mutate(cand = tolower(Candidate))
+  
+#only select the individual filings for Clinton and Trump
+filing1 <-
+  filing %>%
+  mutate(care = if_else(committee %in% c2c$cand, 1,0)) %>%
+  filter(mutate == 1)
 
+
+#once the filing dataframe separates into multiple columns, we should be in business 
 ```
 
+
+```{r threshold for campaign spending}
+threshold <- function(k, dat) {
+  return( )
+}
+
+```
 
 
 #Double-LASSO
