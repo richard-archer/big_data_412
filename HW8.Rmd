@@ -414,6 +414,10 @@ CF_to_pop$margin_dec<-CF_to_pop$margin/(CF_to_pop$Highest.Office)
 #add all the spendings together into one total spending per state
 CF_to_pop <- CF_to_pop %>% mutate(CF = Dem.CF + Ind.CF + Rep.CF)
 
+sum(CF_to_pop$Rep.CF)
+sum(CF_to_pop$Dem.CF)
+(sum(CF_to_pop$Rep.CF)-sum(CF_to_pop$Dem.CF))/sum( CF_to_pop$Rep.CF, CF_to_pop$Dem.CF)
+
 #dont really need this, just for synchronizing with Grace I think
 ts_a<-mutate(ts, Abbreviation=V161010e)
 ts3<-merge(ts_a, CF_to_pop, by="Abbreviation")
@@ -526,7 +530,11 @@ na_count <-sapply(factor_ts2, function(y) sum(length(which((y%in%c(-7:-1))))))
 #only include the columns that have no bad missing values
 good_names<-names(na_count)[na_count==0]
 factor_ts3<-select(factor_ts2, c(good_names))
+#factor_ts3[factor_ts3 %in% c(-8,-9)]<--1
+#head(factor_ts3)
 f_state_ts2<-cbind(Abbreviation, factor_ts3)
+
+
 
 
 #timing the loop because it took a while the first time
@@ -536,7 +544,7 @@ for (col in names(factor_ts3)){
   #make a proportion table of row percentages (each state is one row). So we get percent of each factor in a given column
   pt<-prop.table(table(f_state_ts2$Abbreviation, f_state_ts2[, col]), 1)
   #attach the original column names to the factor values, make these into the column names
-  colnames(pt)<-paste(col, colnames(pt), sep="_")
+  colnames(pt)<-paste( col,colnames(pt), sep="_")
   #turn it into a dataframe
   p<-as.data.frame.matrix(pt)
   p <- cbind(rownames(p), as.data.frame(p, row.names=NULL))
@@ -550,6 +558,7 @@ for (col in names(factor_ts3)){
 }
   
 props
+head(clean_names(props))
 ```
 
 ```{r}
@@ -610,8 +619,12 @@ plot(bigd_lasso)
 
 ```{r}
 #with fewer variables, we can try normal double lasso, but the spm isnt working for some reason. Getting errors that dont come up on stack exchange idk what to do beyond that
-ething2<-select(factorsNumeric(everything), -c("State", "Overseas.Eligible"))
-spm <-sparse.model.matrix(~.-CF-Ind.CF-Dem.CF-Rep.CF, data=ething2)[,-1]#[, c("V161241", "V161342", "salt")])[,-1]
+head(clean_names(factorsNumeric(everything)))
+#ething3<-select(Filter(is.numeric, factorsNumeric(everything)), -c("State", "Overseas.Eligible", "Winner", "Abbreviation"))
+ething4<-Filter(is.numeric, factorsNumeric(everything))
+ething4<-ething4[ , apply(ething4, 2, function(x) !any(is.na(x)))]
+head(ething4)
+spm <-sparse.model.matrix(~.-CF-Ind.CF-Dem.CF-Rep.CF, data=ething4, drop.unused.levels = F)[,-1]#[, c("V161241", "V161342", "salt")])[,-1]
 
 #spm2<-spm[,!(state=="DC") ]
 #spm2
@@ -734,5 +747,9 @@ dev.off()
 
 jpeg("./Plots/spendingvsto")
 plot(ething$VEP.Highest.Office, ething$CF, xlab = "Turnout", ylab = "Total Spending", main="Spending vs Turnout")
+dev.off()
+
+jpeg("./Plots/margindec_hist.jpeg")
+hist(ething$margin_dec, main="Margin of Victory Percentage", xlab="Margin of Victory/Number of Votes")
 dev.off()
 ```
