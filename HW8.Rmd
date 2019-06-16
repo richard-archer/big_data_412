@@ -617,6 +617,7 @@ coef(bigd_lasso)
 plot(bigd_lasso)
 ```
 
+THIS IS THE MOTHERFUCKING DOUBLE FUCKING LASSO FUCKDKFHSLHFDSD
 ```{r}
 #with fewer variables, we can try normal double lasso, but the spm isnt working for some reason. Getting errors that dont come up on stack exchange idk what to do beyond that
 head(clean_names(factorsNumeric(everything)))
@@ -624,21 +625,28 @@ head(clean_names(factorsNumeric(everything)))
 ething4<-Filter(is.numeric, factorsNumeric(everything))
 ething4<-ething4[ , apply(ething4, 2, function(x) !any(is.na(x)))]
 head(ething4)
-spm <-sparse.model.matrix(~.-CF-Ind.CF-Dem.CF-Rep.CF, data=ething4, drop.unused.levels = F)[,-1]#[, c("V161241", "V161342", "salt")])[,-1]
+#spm <-sparse.model.matrix(~.-CF-Ind.CF-Dem.CF-Rep.CF, data=ething4, drop.unused.levels = T)[,-1]#[, c("V161241", "V161342", "salt")])[,-1]
+
+#other_ething<-select(ething4, -c("Dem.CF", "CF", "Ind.CF", "Rep.CF"))
+
+spm_fake<-select(ething4, -c("CF", "Ind.CF", "Rep.CF", "Dem.CF", "VEP.Highest.Office", "VAP.Highest.Office"))
 
 #spm2<-spm[,!(state=="DC") ]
 #spm2
 
 d<-ething$CF
+d
 length(d)
-dim(spm)
+dim(ething4)
 #dim(tsg2)
 #dim(spm)
 #length(CF_to_pop$CF)
 
-treat_lasso<-gamlr(spm, d)
+treat_lasso<-gamlr(spm_fake, d)
 
-dhat<-predict(treat_lasso, )
+plot(treat_lasso)
+#coef(treat_lasso)
+dhat<-predict(treat_lasso, newdata=spm_fake, type="response")
 
 V<-CF_to_pop$VEP.Highest.Office
 
@@ -648,9 +656,19 @@ D<-CF_to_pop$Dem.CF
 R<-CF_to_pop$Rep.CF
 I<-CF_to_pop$Ind.CF
 
-d_lasso<-gamlr(cbind(d,dhat,ething2), V, free=2)
+#as.data.frame(d)
+#as.data.frame.matrix(dhat)
+#as.data.frame(spm_fake)
+
+d_lasso<-gamlr(cbind(d,as.data.frame.matrix(dhat),spm_fake), V, free=2)
 coef(d_lasso)
-dlasso_plot<-plot(d_lasso)
+plot(d_lasso)
+
+#V166032_1
+#V161158x_3<-party
+#V161148_1<-which pres will carry state
+#V161121_1<-angry at Hillary Clinton lol
+#V161083_-9<-approve of how pres handles economy
 ```
   
 Old LASSO stuff, might use it later
