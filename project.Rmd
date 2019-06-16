@@ -31,6 +31,7 @@ havingIP <- function() {
 }
 havingIP() #fuck my laptop
 
+library(readr)
 library(knitr)
 library(dplyr)
 library(tidyverse)
@@ -311,9 +312,6 @@ write.csv(ts3,'ts3.csv')
 ```{r campaign finance data individualized}
 #FEC individualized campaign finance data
 #this is too large to view or download--don't try to view in R 
-install.packages("readr")
-library(readr)
-
 
 #COMMITTEE TO CANDIDATE CONVERSION
 c2c <- read_tsv("ccl.txt")
@@ -338,8 +336,6 @@ c2c <-
   c2c %>% 
   filter(cand_id == "P80001571" | cand_id == "P00003392")
 #This is our list of FEC committees for both Trump and Clinton
-  
-
 
 #PAC CONTRIBUTIONS 
 filing_pac <- read_tsv("itpas2.txt")
@@ -411,50 +407,50 @@ colnames(filing_final) <- c("Abbreviation",
                             "cmte_id")
 
 
-#INDIVIDUAL CONTRIBUTIONS 
-#This takes over 30 minutes, unclear if it's worth it
-filing_indiv <- read_tsv("itcont.txt")
-colnames(filing_indiv) <- c("original")
-filing_indiv <- 
-  rbind(data.frame(do.call('rbind', 
-                     strsplit(as.character(filing_indiv$original),
-                              '|',
-                              fixed=TRUE))))
-#there's a way to add colnames using the file header_filing, but idgaf
-colnames(filing_indiv) <- c("cmte_id",
-                                  "amndt_ind",  
-                                  "tpt_tp",
-                                  "transaction_pgi",
-                                  "image_num",
-                                  "transaction_tp",
-                                  "entity_tp",
-                                  "name",
-                                  "city",
-                                  "state",
-                                  "zip",
-                                  "employer",
-                                  "occupation",
-                                  "transaction_dt",
-                                  "transaction_amt",#amount spent
-                                  "other_id",
-                                  "time", #when spent
-                                  "file_num",
-                                  "memo_cd",
-                                  "memo_txt",
-                                  "sub_id") 
-filing_indiv$time <- substr(filing_indiv$time, 0, 8)
-
-filing_indiv <- 
-  filing_indiv %>%
-  mutate(date = as.numeric(time), 
-         id = "indiv")
-  filter(date < 20161108,
-         date > 20150412,
-        !is.na(transaction_amt)) %>%
-  select(-c("memo_cd",
-            "memo_txt",
-            "sub_id",
-            "other_id"))
+# #INDIVIDUAL CONTRIBUTIONS
+# #This takes over 30 minutes, unclear if it's worth it
+# filing_indiv <- read_tsv("itcont.txt")
+# colnames(filing_indiv) <- c("original")
+# filing_indiv <-
+#   rbind(data.frame(do.call('rbind',
+#                      strsplit(as.character(filing_indiv$original),
+#                               '|',
+#                               fixed=TRUE))))
+# #there's a way to add colnames using the file header_filing, but idgaf
+# colnames(filing_indiv) <- c("cmte_id",
+#                                   "amndt_ind",
+#                                   "tpt_tp",
+#                                   "transaction_pgi",
+#                                   "image_num",
+#                                   "transaction_tp",
+#                                   "entity_tp",
+#                                   "name",
+#                                   "city",
+#                                   "state",
+#                                   "zip",
+#                                   "employer",
+#                                   "occupation",
+#                                   "transaction_dt",
+#                                   "transaction_amt",#amount spent
+#                                   "other_id",
+#                                   "time", #when spent
+#                                   "file_num",
+#                                   "memo_cd",
+#                                   "memo_txt",
+#                                   "sub_id")
+# filing_indiv$time <- substr(filing_indiv$time, 0, 8)
+# 
+# filing_indiv <-
+#   filing_indiv %>%
+#   mutate(date = as.numeric(time),
+#          id = "indiv")
+#   filter(date < 20161108,
+#          date > 20150412,
+#         !is.na(transaction_amt)) %>%
+#   select(-c("memo_cd",
+#             "memo_txt",
+#             "sub_id",
+#             "other_id"))
   
   
 #Clinton announced in April 12, 2015
@@ -478,25 +474,44 @@ threshold <- function(k, dat) {
     filter(cf < k) 
   test <- dat
   tree <- rpart(party_win ~ ., train, method = "class")
-
   pls <- plot(tree)
   #text(tree) fuck again??
-
   predicted_win <- predict(tree, test)
-
   return(pls)
 }
 
-threshold(10000, filing_final)
+filing_false <- subset(filing_final, 
+                       as.numeric(filing_final$Abbreviation) != "OK")
 
+levels(droplevels(filing_false$Abbreviationl))
+
+
+threshold(10000, filing_false)
 #need help with the prediction model part of this
+```
+
+
+
+threshold2 <- function(k, dat) {
+  train <- 
+    dat %>% 
+    filter(cf < k) 
+  test <- dat
+  tree <- rpart(margin ~ ., train
+                #, method = "class"
+                )
+  pls <- plot(tree)
+  #text(tree) fuck again??
+  predicted_win <- predict(tree, test)
+  return(pls)
+}
+
+threshold2(10000, filing_final)
 
 ```
 
 
-```{r}
-#Exploratory stuff: make a graph of spending over time
-
+```{r exploratory stuff}
 #which states received the most campaign funding? Does this correlate to tighter margins? 
 # filing1 <-
 #   aggregate(filing_final$cf, 
@@ -511,29 +526,37 @@ threshold(10000, filing_final)
 expl1 <- 
   CF_pop %>%
   mutate(D = if_else(is.na(D)== TRUE, 0, D),
-        I = if_else(is.na(I)== TRUE, 0, I),
+         I = if_else(is.na(I)== TRUE, 0, I),
          R = if_else(is.na(R)== TRUE, 0, R),
-        cf = D + I + R)
-sort.expl1 <- expl1[order("cf")] #why won't this work
-sort.expl1 <- sort(expl1$cf) #where are the states??
-#once you sort, you can order states by who had the most campaign spending
+         cf = D + I + R)
+sorted_expl1 <- expl1[order(as.integer(expl1$cf), expl1$Abbreviation, decreasing = FALSE), ]
 
 #now see if margin of victory correlates highly with campaign spending
+exp <- lm(sorted_expl1$margin_per~sorted_expl1$cf)
+ggplot(data=sorted_expl1,
+       aes(x=log(cf),
+           y=margin_per)) + geom_point() + geom_smooth(method = 'lm')
+
+##Spending over time:
+#see if as we get closer to election day, spending tends to increase
+
+exp2 <- lm(filing_pac$date~filing_pac$cf)
+plot(filing_pac$cf, filing_pac$date)
+
+
 
 ```
 
 
 
-#Resolve Missing Data: Grace is working on this
+#Resolve Missing Data: bc we love Andy
 ```{r}
-#Drop every NA value (-1 through -7) - the dumbass way
+#Drop every NA value (-1 through -7) and reassign -8, -9 to -1 bc those are meaningful: the dumbass way
 ts_n <- 
   ts3 %>% 
-#keep -8 and -9 bc those are meaningful 
-  
-  
-#reassign -8 and -9 to -1
-
+  replace("-8", -1) %>%
+  replace("-9", -1) %>%
+  replace (-1:-7, 0)
 ```
 
 
