@@ -302,14 +302,227 @@ ts1 <- mutate(ts, Abbreviation = V161010e) %>%
 #ts + campaign finance, total spending, results by state
 ts3 <- 
   merge(ts1, CF_pop, by = "Abbreviation")
+
+write.csv(ts3,'ts3.csv')
+```
+
+
+#Campaign Finance Take 2
+```{r campaign finance data individualized}
+#FEC individualized campaign finance data
+#this is too large to view or download--don't try to view in R 
+install.packages("readr")
+library(readr)
+
+
+#COMMITTEE TO CANDIDATE CONVERSION
+c2c <- read_tsv("ccl.txt")
+head_c2c <- read.csv("ccl_header_file.csv")
+colnames(c2c) <- c("original")
+c2c <- 
+  rbind(data.frame(do.call('rbind', 
+                     strsplit(as.character(c2c$original),
+                              '|',
+                              fixed=TRUE))))
+colnames(c2c) <- c("cand_id",
+                   "cand_election_yr",
+                   "fec_election_yr",
+                   "cmte_id",
+                   "cmte_tp",
+                   "cmte_dsgn",
+                   "linkage_id")
+#Clinton ID: P00003392
+#Trump ID: P80001571
+
+c2c <- 
+  c2c %>% 
+  filter(cand_id == "P80001571" | cand_id == "P00003392")
+#This is our list of FEC committees for both Trump and Clinton
+  
+
+
+#PAC CONTRIBUTIONS 
+filing_pac <- read_tsv("itpas2.txt")
+#header_pac <- read.csv("pas2_header_file.csv")
+colnames(filing_pac) <- c("original")
+filing_pac <- 
+  rbind(data.frame(do.call('rbind', 
+                     strsplit(as.character(filing_pac$original),
+                              '|',
+                              fixed=TRUE))))
+#there's a way to add colnames using the file header_filing, but idgaf
+colnames(filing_pac) <- c("cmte_id",
+                                  "amndt_ind",  
+                                  "rpt_tp",
+                                  "transaction_pgi",
+                                  "image_num",
+                                  "transaction_tp",
+                                  "entity_tp",
+                                  "name",
+                                  "city",
+                                  "Abbreviation",
+                                  "zip",
+                                  "employer",
+                                  "occupation",
+                                  "date", #when spent
+                                  "transaction_amt",#amount spent
+                                  "other_id",
+                          "cand_id",
+                                  "transaction_id",
+                                  "file_num",
+                                  "memo_cd",
+                                  "memo_txt",
+                                  "sub_id") 
+filing_pac <- 
+  filing_pac %>%
+  filter(!is.na(transaction_amt)) %>%
+  mutate(id = "pac") %>%
+  select(-c("memo_cd",
+             "memo_txt",
+             "sub_id",
+             "other_id")) %>%
+  filter(cand_id == "P80001571" | cand_id == "P00003392") %>%
+  mutate(candidate = if_else(cand_id == "P80001571", "Trump", "Clinton"),
+         cf = transaction_amt) %>%
+  select(c("candidate",
+            "cf",
+           "date",
+           "Abbreviation",
+           "id",
+           "city",
+           "name",
+           "cmte_id"))
+
+filing_final <- 
+  merge(resultsm, filing_pac, by = "Abbreviation") %>% 
+  select(-c("State abbreviation",
+            "id",
+            "city",
+            "date")) %>%
+  mutate(cf = as.numeric(as.character(cf)))
+colnames(filing_final) <- c("Abbreviation",
+                            "vote_clinton",
+                            "vote_trump",
+                            "margin",
+                            "party_win",
+                            "cf_candidate",
+                            "cf",
+                            "cf_name",
+                            "cmte_id")
+
+
+#INDIVIDUAL CONTRIBUTIONS 
+#This takes over 30 minutes, unclear if it's worth it
+filing_indiv <- read_tsv("itcont.txt")
+colnames(filing_indiv) <- c("original")
+filing_indiv <- 
+  rbind(data.frame(do.call('rbind', 
+                     strsplit(as.character(filing_indiv$original),
+                              '|',
+                              fixed=TRUE))))
+#there's a way to add colnames using the file header_filing, but idgaf
+colnames(filing_indiv) <- c("cmte_id",
+                                  "amndt_ind",  
+                                  "tpt_tp",
+                                  "transaction_pgi",
+                                  "image_num",
+                                  "transaction_tp",
+                                  "entity_tp",
+                                  "name",
+                                  "city",
+                                  "state",
+                                  "zip",
+                                  "employer",
+                                  "occupation",
+                                  "transaction_dt",
+                                  "transaction_amt",#amount spent
+                                  "other_id",
+                                  "time", #when spent
+                                  "file_num",
+                                  "memo_cd",
+                                  "memo_txt",
+                                  "sub_id") 
+filing_indiv$time <- substr(filing_indiv$time, 0, 8)
+
+filing_indiv <- 
+  filing_indiv %>%
+  mutate(date = as.numeric(time), 
+         id = "indiv")
+  filter(date < 20161108,
+         date > 20150412,
+        !is.na(transaction_amt)) %>%
+  select(-c("memo_cd",
+            "memo_txt",
+            "sub_id",
+            "other_id"))
+  
+  
+#Clinton announced in April 12, 2015
+#Trump announced June 16, 2015
+#Election day is November 8, 2016
+
+
+#COMMITTEE/INDIV FILINGS FOR CLINTON/TRUMP IN 2016
+#filing_final <-
+#  rbind.fill(filing_pac, filing_indiv)
+  
+#save this file and push to github
+write.csv(filing_final, "cf_filing_pac.csv")
+```
+
+
+```{r threshold for campaign spending}
+threshold <- function(k, dat) {
+  train <- 
+    dat %>% 
+    filter(cf < k) 
+  test <- dat
+  tree <- rpart(party_win ~ ., train, method = "class")
+
+  pls <- plot(tree)
+  #text(tree) fuck again??
+
+  predicted_win <- predict(tree, test)
+
+  return(pls)
+}
+
+threshold(10000, filing_final)
+
+#need help with the prediction model part of this
+
 ```
 
 
 ```{r}
 #Exploratory stuff: make a graph of spending over time
 
+#which states received the most campaign funding? Does this correlate to tighter margins? 
+# filing1 <-
+#   aggregate(filing_final$cf, 
+#             by=list(Abbreviation=filing_final$Abbreviation), 
+#             FUN=sum) %>% 
+#   ungroup()
+# colnames(filing1) <- c("Abbreviation", "cf")
+# 
+# sort.filing1 <- filing1[order("cf"),]
+# filing1a <- sort(filing1$cf)
+
+expl1 <- 
+  CF_pop %>%
+  mutate(D = if_else(is.na(D)== TRUE, 0, D),
+        I = if_else(is.na(I)== TRUE, 0, I),
+         R = if_else(is.na(R)== TRUE, 0, R),
+        cf = D + I + R)
+sort.expl1 <- expl1[order("cf")] #why won't this work
+sort.expl1 <- sort(expl1$cf) #where are the states??
+#once you sort, you can order states by who had the most campaign spending
+
+#now see if margin of victory correlates highly with campaign spending
 
 ```
+
+
 
 #Resolve Missing Data: Grace is working on this
 ```{r}
@@ -323,69 +536,6 @@ ts_n <-
 
 ```
 
-
-#Campaign Finance Take 2
-```{r campaign finance data individualized}
-#propublica individualized funding
-pro_filing <- 
-  read.delim("ftf-all-filings.tsv", sep = "\t") %>%
-  select(-c(url,thumbnail_url, dc_slug)) %>%
-  mutate(year = as.Date(upload_date, "%Y"))  %>%
-  filter (year < "2012-11-06",
-         !is.na(gross_amount))
-#we go from 66k to 16k cases by this point - dropping 50k cases ain't great
-#our cycle cutoff is November 6, 2012 because that's election day for 2012
-#in hindsight this is useless because it's 2012. fuck me.
- 
-
-#FEC individualized campaign finance data
-#this is too large to view or download 
-
-#method 1: nope. 
-# FILES <- list.files( pattern = ".txt")
-# for (i in 1:length(FILES)) {
-# FILE=read.table(file=FILES[i],header=T)
-# write.csv(FILE,file=paste0("/home/dennis/Desktop/",sub(".txt","",FILES[i]),".csv"))
-# }
-
-# method 2: why did I even think that would work
-# filing <- read.table("itcont.txt", sep ="|")
-
-#method 3: readr is a speedy boi 
-install.packages("readr")
-library(readr)
-
-#what's the diff between delim and tsv
-filing <- read_tsv("itcont.txt")
-separate(filing, col, into, sep = "|", remove = TRUE, convert = FALSE) #this doesn't work.
-
-#Clinton announced in April 12, 2015
-#Trump announced June 16, 2015
-#Election day is November 8, 2016
-  
-
-#committee to candidate conversion, because filing only has committees
-c2c <- 
-  read.csv("com_to_cand.csv")%>%
-  mutate(cand = tolower(Candidate))
-  
-#only select the individual filings for Clinton and Trump
-filing1 <-
-  filing %>%
-  mutate(care = if_else(committee %in% c2c$cand, 1,0)) %>%
-  filter(mutate == 1)
-
-
-#once the filing dataframe separates into multiple columns, we should be in business 
-```
-
-
-```{r threshold for campaign spending}
-threshold <- function(k, dat) {
-  return( )
-}
-
-```
 
 
 #Double-LASSO
